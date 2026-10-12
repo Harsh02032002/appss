@@ -16,6 +16,7 @@ Build a complete, modern Zomato-style Customer Food Delivery mobile application 
 - Registered regular who saves addresses and reorders
 
 ## Architecture
+- **Database:** MongoDB Atlas (cluster0.hddqr9e, db `food`) — switched Jun 2026; local data (8 restaurants, 49 items, users, orders) migrated. `MONGO_URL`/`DB_NAME` in `/app/backend/.env`.
 - **Frontend:** Expo Router (SDK 57), React Native 0.86, file-based routing. Tabs (Home/Search/Orders/Profile) with NativeTabs on iOS 26+ and JS Tabs elsewhere. Context providers: Auth, Cart (persisted), Location. Theme tokens from design_guidelines.json (warm sand #FDFBF7, terracotta #D95325, Plus Jakarta Sans + Geist fonts).
 - **Backend:** FastAPI (`/app/backend/server.py`) on 0.0.0.0:8001, all routes under `/api`. MongoDB via Motor. JWT auth (bcrypt + PyJWT, 7-day tokens). WebSocket endpoint `/api/ws/orders/{id}` with asyncio order-status simulation + rider GPS interpolation.
 - **DB Collections:** users, restaurants, menu_items, addresses, orders. Seed in `/app/backend/seed.py` (8 restaurants, ~49 menu items, mixed Indian cuisines).
@@ -25,6 +26,12 @@ Build a complete, modern Zomato-style Customer Food Delivery mobile application 
 Guest browsing, email/password auth, restaurant/menu browsing, cart, COD + Razorpay checkout, address management, live order tracking, profile, help.
 
 ## Implemented
+- **Jun 2026 (Feature pack 2):**
+  - Favourites: heart on restaurant cards + restaurant screen, `/favorites` screen via Profile; `favorites` collection, `GET/POST /api/favorites`
+  - Coupons: WELCOME50 / FLAT100 / TASTY20 / FREEDEL; `GET /api/coupons`, `POST /api/coupons/validate`; server-side discount in `POST /api/orders` (`coupon_code`, `amounts.discount`)
+  - Rating & Review: `POST /api/orders/{id}/review` (DELIVERED only, once); `reviews` collection shown on restaurant screen ("What customers say")
+  - Reorder (Orders tab + order details → refills cart) and Cancel (`POST /api/orders/{id}/cancel`, 60s window, cancels simulation, WS broadcasts CANCELLED)
+  - Tested: 20/20 backend pytest (`/app/backend/tests/test_new_features.py`) + all frontend flows pass (iteration_2.json)
 - **12 Oct 2026 (MVP):**
   - All 18 screens: Splash, Onboarding, Login, Register, Home, Search, Restaurant Details, Food Item modal, Cart, Checkout (incl. Payment Selection + tip), Address Selection, Add/Edit Address, Order Confirmation, My Orders, Order Details, Track Order, Profile, Saved Addresses (in Address screen), Help
   - Backend: auth (register/login/me), home feed, restaurants list/filter, search (restaurants + dishes), address CRUD, orders (server-side bill math), Razorpay order create + verify (+ public verify for hosted page), WebSocket live tracking with simulated progression + rider movement
@@ -33,14 +40,11 @@ Guest browsing, email/password auth, restaurant/menu browsing, cart, COD + Razor
   - Test user: test@dashbite.in / test123
 
 ## Known Issues / Blockers
-- ⚠️ **Razorpay keys invalid** (401 from Razorpay API directly). User to regenerate Test Mode keys at dashboard.razorpay.com → Account & Settings → API Keys, then update `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` in `/app/backend/.env`. Integration code is complete and ready.
+- ⚠️ **Razorpay keys invalid** (401 from Razorpay API directly, re-verified Jun 2026 with same keys). User chose to continue with COD. Integration code is complete and ready.
 
 ## Backlog (prioritized)
-- **P0:** Fix Razorpay credentials → verify Pay Online end-to-end
-- **P1:** Order cancellation (within 60s window), reorder button on past orders
+- **P1:** Fix Razorpay credentials → verify Pay Online end-to-end
 - **P1:** Real map on Track screen (react-native-maps) once GPS rider tracking exists
-- **P2:** Promo codes / coupon application at checkout
-- **P2:** Ratings & reviews after delivery
 - **P2:** Restaurant admin + rider apps (Phase 2)
 
 ## Next Tasks

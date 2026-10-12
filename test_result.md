@@ -101,3 +101,37 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+## Iteration: 4 new features (Favourites, Coupons, Rating & Review, Reorder + Cancel) — Jun 2026
+backend:
+  - task: "Favourites API (GET /api/favorites, POST /api/favorites/{restaurant_id} toggle)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+  - task: "Coupons API (GET /api/coupons, POST /api/coupons/validate, coupon_code in POST /api/orders)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+  - task: "Order review (POST /api/orders/{id}/review) + reviews in GET /api/restaurants/{id}"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+  - task: "Order cancel (POST /api/orders/{id}/cancel, 60s window, statuses PAYMENT_PENDING/CONFIRMED/PREPARING)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+frontend:
+  - task: "Heart button on restaurant cards + restaurant screen, Favourites screen (/favorites) via Profile"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/context/favorites.tsx, /app/frontend/app/favorites.tsx"
+  - task: "Coupon input + coupon cards on Checkout, discount shown in bill"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/checkout.tsx"
+  - task: "Order details: Cancel (countdown), Rate & Review form, Reorder button; Orders tab: Reorder/Rate buttons on past orders"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/order/[id].tsx, /app/frontend/app/(tabs)/orders.tsx"
+agent_communication:
+  - agent: "main"
+    message: "Backend endpoints smoke-tested manually via python requests (all pass). Need full frontend+backend test."

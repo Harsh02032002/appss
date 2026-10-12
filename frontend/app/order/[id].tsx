@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -8,8 +8,22 @@ import dayjs from "dayjs";
 
 import { fonts, makeStyles, radius, spacing, typeScale, useTheme } from "@/src/theme";
 import { apiFetch } from "@/src/api/client";
-import { EmptyState, inr, VegBadge } from "@/src/components/ui";
+import { EmptyState, inr, showToast, VegBadge } from "@/src/components/ui";
+import { useReorder } from "@/src/hooks/use-reorder";
 import { ACTIVE_STATUSES, Order, STATUS_LABELS, statusColor } from "../(tabs)/orders";
+
+const CANCEL_WINDOW_SECONDS = 60;
+const CANCELLABLE = ["PAYMENT_PENDING", "CONFIRMED", "PREPARING"];
+
+function confirmAsync(title: string, message: string): Promise<boolean> {
+  if (Platform.OS === "web") return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  return new Promise((resolve) => {
+    Alert.alert(title, message, [
+      { text: "Keep order", style: "cancel", onPress: () => resolve(false) },
+      { text: "Cancel order", style: "destructive", onPress: () => resolve(true) },
+    ]);
+  });
+}
 
 export default function OrderDetails() {
   const styles = useStyles();
@@ -17,10 +31,16 @@ export default function OrderDetails() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const reorder = useReorder();
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [now, setNow] = useState(Date.now());
+  const [cancelling, setCancelling] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -34,6 +54,50 @@ export default function OrderDetails() {
       }
     })();
   }, [id]);
+
+  const secondsLeft = order
+    ? Math.max(0, CANCEL_WINDOW_SECONDS - Math.floor((now - dayjs(order.created_at).valueOf()) / 1000))
+    : 0;
+  const canCancel = !!order && CANCELLABLE.includes(order.status) && secondsLeft > 0;
+
+  useEffect(() => {
+    if (!canCancel) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [canCancel]);
+
+  const cancelOrder = async () => {
+    if (!order) return;
+    const ok = await confirmAsync("Cancel this order?", "This cannot be undone.");
+    if (!ok) return;
+    setCancelling(true);
+    try {
+      const o = await apiFetch<Order>(`/api/orders/${order.id}/cancel`, { method: "POST" });
+      setOrder(o);
+      showToast("Order cancelled", "success");
+    } catch (e: any) {
+      showToast(e.message || "Could not cancel order", "error");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const submitReview = async () => {
+    if (!order || rating === 0) return;
+    setSubmitting(true);
+    try {
+      const o = await apiFetch<Order>(`/api/orders/${order.id}/review`, {
+        method: "POST",
+        body: JSON.stringify({ rating, comment }),
+      });
+      setOrder(o);
+      showToast("Thanks for your feedback!", "success");
+    } catch (e: any) {
+      showToast(e.message || "Could not submit review", "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]} testID="order-details-screen">
@@ -51,7 +115,7 @@ export default function OrderDetails() {
       ) : error || !order ? (
         <EmptyState icon="alert-circle-outline" title="Order not found" subtitle={error} testID="order-details-error" />
       ) : (
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {/* Restaurant header */}
           <View style={styles.card}>
             <View style={styles.restaurantRow}>
@@ -66,6 +130,73 @@ export default function OrderDetails() {
               </View>
             </View>
           </View>
+
+          {/* Cancel window */}
+          {canCancel ? (
+            <Pressable
+              testID="order-cancel-button"
+              style={[styles.cancelBtn, cancelling && { opacity: 0.6 }]}
+              onPress={cancelOrder}
+              disabled={cancelling}
+            >
+              {cancelling ? (
+                <ActivityIndicator color={colors.error} />
+              ) : (
+                <>
+                  <Ionicons name="close-circle-outline" size={18} color={colors.error} />
+                  <Text style={styles.cancelText}>Cancel order · {secondsLeft}s left</Text>
+                </>
+              )}
+            </Pressable>
+          ) : null}
+
+          {/* Rate & review */}
+          {order.status === "DELIVERED" && !order.review ? (
+            <View style={styles.reviewCard} testID="order-review-form">
+              <Text style={styles.reviewTitle}>How was your food?</Text>
+              <Text style={styles.meta}>Rate your experience with {order.restaurant.name}</Text>
+              <View style={styles.starRow}>
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <Pressable key={s} testID={`review-star-${s}`} hitSlop={6} onPress={() => setRating(s)} style={styles.starBtn}>
+                    <Ionicons name={s <= rating ? "star" : "star-outline"} size={32} color={colors.warning} />
+                  </Pressable>
+                ))}
+              </View>
+              <TextInput
+                testID="review-comment"
+                style={styles.reviewInput}
+                placeholder="Tell us what you liked (optional)"
+                placeholderTextColor={colors.muted}
+                value={comment}
+                onChangeText={setComment}
+                multiline
+                maxLength={500}
+              />
+              <Pressable
+                testID="review-submit"
+                style={[styles.trackBtn, { marginTop: spacing.sm }, (rating === 0 || submitting) && { opacity: 0.5 }]}
+                disabled={rating === 0 || submitting}
+                onPress={submitReview}
+              >
+                {submitting ? (
+                  <ActivityIndicator color={colors.onBrandPrimary} />
+                ) : (
+                  <Text style={styles.trackBtnText}>Submit Rating</Text>
+                )}
+              </Pressable>
+            </View>
+          ) : null}
+          {order.review ? (
+            <View style={styles.reviewCard} testID="order-review-done">
+              <Text style={styles.reviewTitle}>Your rating</Text>
+              <View style={styles.starRow}>
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <Ionicons key={s} name={s <= order.review!.rating ? "star" : "star-outline"} size={24} color={colors.warning} />
+                ))}
+              </View>
+              {order.review.comment ? <Text style={styles.reviewComment}>“{order.review.comment}”</Text> : null}
+            </View>
+          ) : null}
 
           {/* Timeline */}
           <Text style={styles.sectionTitle}>Status Timeline</Text>
@@ -107,10 +238,22 @@ export default function OrderDetails() {
             <Row label="Delivery fee" value={inr(order.amounts.delivery_fee)} />
             <Row label="Taxes & charges" value={inr(order.amounts.taxes)} />
             <Row label="Tip" value={order.amounts.tip ? inr(order.amounts.tip) : "—"} />
+            {order.amounts.discount ? (
+              <View style={styles.rowBetween} testID="order-discount-row">
+                <Text style={[styles.meta, { color: colors.success }]}>Coupon ({order.coupon_code})</Text>
+                <Text style={[styles.rowValue, { color: colors.success }]}>-{inr(order.amounts.discount)}</Text>
+              </View>
+            ) : null}
             <View style={styles.divider} />
             <View style={styles.rowBetween}>
               <Text style={styles.totalLabel}>
-                Total ({order.payment_method === "cod" ? "Cash on Delivery" : "Paid Online"})
+                Total (
+                {order.payment_status === "refund_initiated"
+                  ? "Refund initiated"
+                  : order.payment_method === "cod"
+                    ? "Cash on Delivery"
+                    : "Paid Online"}
+                )
               </Text>
               <Text style={styles.totalValue}>{inr(order.amounts.total)}</Text>
             </View>
@@ -141,7 +284,12 @@ export default function OrderDetails() {
               <Ionicons name="navigate" size={18} color="#FFFFFF" />
               <Text style={styles.trackBtnText}>Track Live</Text>
             </Pressable>
-          ) : null}
+          ) : (
+            <Pressable testID="order-details-reorder-button" style={styles.trackBtn} onPress={() => reorder(order)}>
+              <Ionicons name="repeat" size={18} color="#FFFFFF" />
+              <Text style={styles.trackBtnText}>Reorder</Text>
+            </Pressable>
+          )}
 
           <Pressable testID="order-help-link" style={styles.helpLink} onPress={() => router.push("/help")}>
             <Text style={styles.helpText}>Need help with this order?</Text>
@@ -215,6 +363,41 @@ const useStyles = makeStyles((colors) => ({
     marginTop: spacing.lg,
   },
   trackBtnText: { color: "#FFFFFF", fontFamily: fonts.displayBold, fontSize: typeScale.lg },
+  cancelBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: radius.md,
+    minHeight: 48,
+    marginTop: spacing.md,
+  },
+  cancelText: { color: colors.error, fontFamily: fonts.displaySemiBold, fontSize: typeScale.base },
+  reviewCard: {
+    marginTop: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  reviewTitle: { fontFamily: fonts.displayBold, fontSize: typeScale.lg, color: colors.onSurface },
+  starRow: { flexDirection: "row", gap: spacing.xs, marginTop: spacing.xs },
+  starBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  reviewInput: {
+    minHeight: 72,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    fontFamily: fonts.text,
+    fontSize: typeScale.base,
+    color: colors.onSurface,
+    backgroundColor: colors.surface,
+    textAlignVertical: "top",
+  },
+  reviewComment: { fontFamily: fonts.text, fontSize: typeScale.base, color: colors.onSurfaceSecondary, fontStyle: "italic" },
   helpLink: { alignItems: "center", minHeight: 48, justifyContent: "center", marginTop: spacing.sm },
   helpText: { color: colors.info, fontFamily: fonts.textMedium, fontSize: typeScale.base },
 }));

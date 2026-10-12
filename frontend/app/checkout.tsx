@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
@@ -33,6 +33,9 @@ function loadRazorpayScript(): Promise<void> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+type Coupon = { code: string; title: string; description: string; min_order: number };
+type AppliedCoupon = { code: string; discount: number; free_delivery: boolean; title: string };
+
 export default function Checkout() {
   const styles = useStyles();
   const router = useRouter();
@@ -45,9 +48,53 @@ export default function Checkout() {
   const [payment, setPayment] = useState<"cod" | "razorpay">("cod");
   const [placing, setPlacing] = useState(false);
   const [webViewOrderId, setWebViewOrderId] = useState<string | null>(null);
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [couponInput, setCouponInput] = useState("");
+  const [applied, setApplied] = useState<AppliedCoupon | null>(null);
+  const [applying, setApplying] = useState(false);
+
+  useEffect(() => {
+    apiFetch<{ coupons: Coupon[] }>("/api/coupons").then((d) => setCoupons(d.coupons)).catch(() => {});
+  }, []);
+
+  // Re-validate coupon if the cart changes (min order may no longer be met)
+  useEffect(() => {
+    if (!applied) return;
+    apiFetch<AppliedCoupon>("/api/coupons/validate", {
+      method: "POST",
+      body: JSON.stringify({ code: applied.code, subtotal: cart.subtotal }),
+    })
+      .then(setApplied)
+      .catch((e) => {
+        setApplied(null);
+        showToast(e.message || "Coupon removed", "info");
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart.subtotal]);
+
+  const applyCoupon = async (code: string) => {
+    const clean = code.trim().toUpperCase();
+    if (!clean) return;
+    setApplying(true);
+    try {
+      const res = await apiFetch<AppliedCoupon>("/api/coupons/validate", {
+        method: "POST",
+        body: JSON.stringify({ code: clean, subtotal: cart.subtotal }),
+      });
+      setApplied(res);
+      setCouponInput("");
+      showToast(`${res.code} applied — ${res.title}`, "success");
+    } catch (e: any) {
+      showToast(e.message || "Invalid coupon", "error");
+    } finally {
+      setApplying(false);
+    }
+  };
 
   const taxes = Math.round(cart.subtotal * 0.05);
-  const total = cart.subtotal + DELIVERY_FEE + taxes + tip;
+  const deliveryFee = applied?.free_delivery ? 0 : DELIVERY_FEE;
+  const discount = applied?.discount ?? 0;
+  const total = cart.subtotal + deliveryFee + taxes + tip - discount;
 
   const finishOrder = (orderId: string) => {
     cart.clear();
@@ -117,6 +164,7 @@ export default function Checkout() {
         },
         payment_method: payment,
         tip,
+        coupon_code: applied?.code ?? "",
       };
       const res = await apiFetch<{ order: { id: string }; razorpay: any }>("/api/orders", {
         method: "POST",
@@ -230,6 +278,73 @@ export default function Checkout() {
           ))}
         </View>
 
+        {/* Coupons */}
+        <Text style={styles.sectionTitle}>Offers & Coupons</Text>
+        {applied ? (
+          <View style={styles.appliedCard} testID="coupon-applied">
+            <View style={styles.cardIcon}>
+              <Ionicons name="pricetag" size={20} color="#D95325" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>{applied.code} applied</Text>
+              <Text style={styles.cardSub}>
+                {applied.free_delivery ? "Free delivery on this order" : `You save ${inr(applied.discount)}`}
+              </Text>
+            </View>
+            <Pressable testID="coupon-remove" hitSlop={8} onPress={() => setApplied(null)} style={styles.removeBtn}>
+              <Text style={styles.removeText}>Remove</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <>
+            <View style={styles.couponInputRow}>
+              <TextInput
+                testID="coupon-input"
+                style={styles.couponInput}
+                placeholder="Enter coupon code"
+                placeholderTextColor="#7A746A"
+                autoCapitalize="characters"
+                autoCorrect={false}
+                value={couponInput}
+                onChangeText={setCouponInput}
+                onSubmitEditing={() => applyCoupon(couponInput)}
+                returnKeyType="done"
+              />
+              <Pressable
+                testID="coupon-apply"
+                style={[styles.applyBtn, (!couponInput.trim() || applying) && { opacity: 0.5 }]}
+                disabled={!couponInput.trim() || applying}
+                onPress={() => applyCoupon(couponInput)}
+              >
+                {applying ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={styles.applyText}>Apply</Text>}
+              </Pressable>
+            </View>
+            {coupons.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.couponList}>
+                {coupons.map((c) => {
+                  const eligible = cart.subtotal >= c.min_order;
+                  return (
+                    <Pressable
+                      key={c.code}
+                      testID={`coupon-card-${c.code}`}
+                      style={[styles.couponCard, !eligible && { opacity: 0.55 }]}
+                      onPress={() => applyCoupon(c.code)}
+                      disabled={applying}
+                    >
+                      <View style={styles.couponCodeRow}>
+                        <Ionicons name="ticket-outline" size={14} color="#D95325" />
+                        <Text style={styles.couponCode}>{c.code}</Text>
+                      </View>
+                      <Text style={styles.couponTitle}>{c.title}</Text>
+                      <Text style={styles.couponDesc}>{c.description}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            ) : null}
+          </>
+        )}
+
         {/* Payment selection */}
         <Text style={styles.sectionTitle}>Payment Method</Text>
         <View style={styles.paymentGroup} testID="payment-selection">
@@ -275,9 +390,15 @@ export default function Checkout() {
         <Text style={styles.sectionTitle}>Bill Summary</Text>
         <View style={styles.billCard} testID="checkout-bill">
           <BillRow label={`Item total (${cart.count})`} value={inr(cart.subtotal)} />
-          <BillRow label="Delivery fee" value={inr(DELIVERY_FEE)} />
+          <BillRow label="Delivery fee" value={applied?.free_delivery ? "FREE" : inr(DELIVERY_FEE)} />
           <BillRow label="Taxes & charges (5%)" value={inr(taxes)} />
           <BillRow label="Delivery tip" value={tip === 0 ? "—" : inr(tip)} />
+          {discount > 0 ? (
+            <View style={styles.billRow} testID="bill-discount">
+              <Text style={[styles.billLabel, { color: "#388E3C" }]}>Coupon discount ({applied?.code})</Text>
+              <Text style={[styles.billValue, { color: "#388E3C" }]}>-{inr(discount)}</Text>
+            </View>
+          ) : null}
           <View style={styles.billDivider} />
           <View style={styles.billRow}>
             <Text style={styles.billTotalLabel}>To Pay</Text>
@@ -388,6 +509,57 @@ const useStyles = makeStyles((colors) => ({
   cardSub: { fontFamily: fonts.text, fontSize: typeScale.sm, color: colors.muted, marginTop: 2 },
   changeText: { fontFamily: fonts.displaySemiBold, fontSize: typeScale.base, color: colors.brandPrimary },
   tipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  appliedCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.brandTertiary,
+    borderWidth: 1,
+    borderColor: colors.brandPrimary,
+    borderStyle: "dashed",
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+  },
+  removeBtn: { minHeight: 44, justifyContent: "center" },
+  removeText: { fontFamily: fonts.displaySemiBold, fontSize: typeScale.base, color: colors.error },
+  couponInputRow: { flexDirection: "row", gap: spacing.sm },
+  couponInput: {
+    flex: 1,
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.lg,
+    fontFamily: fonts.textMedium,
+    fontSize: typeScale.base,
+    color: colors.onSurface,
+    backgroundColor: colors.surface,
+  },
+  applyBtn: {
+    minHeight: 48,
+    minWidth: 84,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.brandPrimary,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  applyText: { color: colors.onBrandPrimary, fontFamily: fonts.displaySemiBold, fontSize: typeScale.base },
+  couponList: { gap: spacing.sm, paddingTop: spacing.md },
+  couponCard: {
+    width: 170,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: 2,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  couponCodeRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  couponCode: { fontFamily: fonts.displayBold, fontSize: typeScale.base, color: colors.brandPrimary, letterSpacing: 0.5 },
+  couponTitle: { fontFamily: fonts.displaySemiBold, fontSize: typeScale.sm, color: colors.onSurface },
+  couponDesc: { fontFamily: fonts.text, fontSize: 11, color: colors.muted },
   paymentGroup: {
     backgroundColor: colors.surface,
     borderWidth: 1,

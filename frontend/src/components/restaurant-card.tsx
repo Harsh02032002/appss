@@ -6,6 +6,7 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 
 import { fonts, makeStyles, radius, spacing, typeScale, useTheme } from "@/src/theme";
 import { RatingBadge } from "@/src/components/ui";
+import { FavoriteButton } from "@/src/components/favorite-button";
 
 export type Restaurant = {
   id: string;
@@ -40,6 +41,9 @@ export function RestaurantCard({ restaurant }: { restaurant: Restaurant }) {
             <Text style={styles.offerText}>{restaurant.offer}</Text>
           </View>
         ) : null}
+        <View style={styles.heart}>
+          <FavoriteButton restaurantId={restaurant.id} />
+        </View>
       </View>
       <View style={styles.body}>
         <View style={styles.titleRow}>
@@ -85,6 +89,7 @@ const useStyles = makeStyles((colors) => ({
     paddingVertical: spacing.xs,
   },
   offerText: { color: colors.onBrandPrimary, fontFamily: fonts.displaySemiBold, fontSize: typeScale.sm },
+  heart: { position: "absolute", top: spacing.md, right: spacing.md },
   body: { padding: spacing.md, gap: spacing.xs },
   titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   name: {

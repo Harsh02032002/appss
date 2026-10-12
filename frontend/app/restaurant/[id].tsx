@@ -8,9 +8,13 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import { fonts, makeStyles, radius, spacing, typeScale } from "@/src/theme";
 import { apiFetch } from "@/src/api/client";
 import { Chip, EmptyState, inr, RatingBadge, showToast } from "@/src/components/ui";
+import { FavoriteButton } from "@/src/components/favorite-button";
 import { MenuItem, MenuItemRow } from "@/src/components/menu-item-row";
 import { Restaurant } from "@/src/components/restaurant-card";
 import { useCart } from "@/src/context/cart";
+
+type Review = { id: string; user_name: string; rating: number; comment: string; created_at: string };
+type RestaurantPayload = { restaurant: Restaurant; menu: MenuItem[]; reviews: Review[] };
 
 export default function RestaurantDetails() {
   const styles = useStyles();
@@ -19,7 +23,7 @@ export default function RestaurantDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const cart = useCart();
 
-  const [data, setData] = useState<{ restaurant: Restaurant; menu: MenuItem[] } | null>(null);
+  const [data, setData] = useState<RestaurantPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [vegOnly, setVegOnly] = useState(false);
@@ -30,7 +34,7 @@ export default function RestaurantDetails() {
 
   const load = async () => {
     try {
-      const d = await apiFetch<{ restaurant: Restaurant; menu: MenuItem[] }>(`/api/restaurants/${id}`);
+      const d = await apiFetch<RestaurantPayload>(`/api/restaurants/${id}`);
       setData(d);
       setError("");
     } catch (e: any) {
@@ -70,7 +74,7 @@ export default function RestaurantDetails() {
     );
   }
 
-  const { restaurant, menu } = data;
+  const { restaurant, menu, reviews } = data;
   const filteredMenu = vegOnly ? menu.filter((m) => m.veg) : menu;
   const categories: string[] = [];
   const grouped: Record<string, MenuItem[]> = {};
@@ -100,6 +104,9 @@ export default function RestaurantDetails() {
       >
         <Ionicons name="arrow-back" size={20} color="#1A1917" />
       </Pressable>
+      <View style={[styles.heartBtn, { top: insets.top + spacing.sm }]}>
+        <FavoriteButton restaurantId={restaurant.id} size={40} />
+      </View>
 
       <ScrollView ref={scrollRef} stickyHeaderIndices={[1]} showsVerticalScrollIndicator={false}>
         <View>
@@ -124,6 +131,30 @@ export default function RestaurantDetails() {
               </View>
             ) : null}
           </View>
+          {reviews.length > 0 ? (
+            <View style={styles.reviewsWrap} testID="restaurant-reviews">
+              <Text style={styles.reviewsTitle}>What customers say</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.reviewsRow}>
+                {reviews.map((r) => (
+                  <View key={r.id} style={styles.reviewCard}>
+                    <View style={styles.reviewTop}>
+                      <Text style={styles.reviewUser} numberOfLines={1}>
+                        {r.user_name}
+                      </Text>
+                      <View style={styles.reviewStars}>
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <Ionicons key={s} name={s <= r.rating ? "star" : "star-outline"} size={11} color="#F57C00" />
+                        ))}
+                      </View>
+                    </View>
+                    <Text style={styles.reviewComment} numberOfLines={3}>
+                      {r.comment || "Loved it!"}
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
         </View>
 
         {/* Sticky category chips */}
@@ -234,6 +265,27 @@ const useStyles = makeStyles((colors) => ({
     elevation: 4,
   },
   hero: { width: "100%", height: 240, backgroundColor: colors.surfaceTertiary },
+  heartBtn: { position: "absolute", right: spacing.lg, zIndex: 10 },
+  reviewsWrap: { marginTop: spacing.lg },
+  reviewsTitle: {
+    fontFamily: fonts.displayBold,
+    fontSize: typeScale.lg,
+    color: colors.onSurface,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  reviewsRow: { paddingHorizontal: spacing.lg, gap: spacing.sm },
+  reviewCard: {
+    width: 220,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  reviewTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
+  reviewUser: { fontFamily: fonts.displaySemiBold, fontSize: typeScale.base, color: colors.onSurface, flex: 1 },
+  reviewStars: { flexDirection: "row", gap: 1 },
+  reviewComment: { fontFamily: fonts.text, fontSize: typeScale.sm, color: colors.muted, lineHeight: 18 },
   infoCard: {
     marginHorizontal: spacing.lg,
     marginTop: -28,

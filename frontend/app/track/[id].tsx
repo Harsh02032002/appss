@@ -160,6 +160,11 @@ export default function TrackOrder() {
               <Text style={styles.etaTitle}>Delivered 🎉</Text>
               <Text style={styles.etaSub}>Enjoy your meal!</Text>
             </>
+          ) : status === "CANCELLED" ? (
+            <>
+              <Text style={styles.etaTitle}>Order cancelled</Text>
+              <Text style={styles.etaSub}>Any payment made will be refunded.</Text>
+            </>
           ) : status === "PAYMENT_PENDING" ? (
             <>
               <Text style={styles.etaTitle}>Payment pending</Text>

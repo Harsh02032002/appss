@@ -9,6 +9,7 @@ import { ErrorBoundary } from "@/src/components/error-boundary";
 import { queryClient } from "@/src/query-client";
 import { AuthProvider } from "@/src/context/auth";
 import { CartProvider } from "@/src/context/cart";
+import { FavoritesProvider } from "@/src/context/favorites";
 import { LocationProvider } from "@/src/context/location";
 import { ToastHost } from "@/src/components/ui";
 import { useTheme } from "@/src/theme";
@@ -42,6 +43,7 @@ export default function RootLayout() {
           <AuthProvider>
             <LocationProvider>
               <CartProvider>
+                <FavoritesProvider>
                 <Stack
                   screenOptions={{
                     headerShown: false,
@@ -52,6 +54,7 @@ export default function RootLayout() {
                   <Stack.Screen name="cart" options={{ presentation: "modal" }} />
                 </Stack>
                 <ToastHost />
+                </FavoritesProvider>
               </CartProvider>
             </LocationProvider>
           </AuthProvider>

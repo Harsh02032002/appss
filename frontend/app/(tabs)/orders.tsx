@@ -3,6 +3,7 @@ import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } fr
 import { Image } from "expo-image";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Ionicons from "@react-native-vector-icons/ionicons";
 import dayjs from "dayjs";
 
 import { fonts, makeStyles, radius, spacing, typeScale, useTheme } from "@/src/theme";
@@ -10,13 +11,16 @@ import { usesNativeTabs } from "@/src/navigation";
 import { apiFetch } from "@/src/api/client";
 import { EmptyState } from "@/src/components/ui";
 import { useAuth } from "@/src/context/auth";
+import { useReorder } from "@/src/hooks/use-reorder";
 
 export type Order = {
   id: string;
   restaurant: { id: string; name: string; image: string; address: string; lat?: number; lng?: number };
   items: { item_id: string; name: string; price: number; qty: number; veg: boolean; image: string; notes?: string }[];
   address: { label: string; line1: string; landmark?: string; city?: string; pincode?: string; lat?: number; lng?: number };
-  amounts: { subtotal: number; delivery_fee: number; taxes: number; tip: number; total: number };
+  amounts: { subtotal: number; delivery_fee: number; taxes: number; tip: number; discount?: number; total: number };
+  coupon_code?: string;
+  review?: { rating: number; comment: string; at: string } | null;
   payment_method: string;
   payment_status: string;
   status: string;
@@ -58,6 +62,7 @@ export default function Orders() {
   const insets = useSafeAreaInsets();
   const bottomChrome = usesNativeTabs ? insets.bottom : 0;
   const { user, loading: authLoading } = useAuth();
+  const reorder = useReorder();
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [tab, setTab] = useState<"active" | "past">("active");
@@ -161,7 +166,15 @@ export default function Orders() {
                   </View>
                 </View>
                 <View style={styles.cardBottom}>
-                  <Text style={styles.total}>₹{Math.round(item.amounts.total / 100)}</Text>
+                  <View style={styles.totalWrap}>
+                    <Text style={styles.total}>₹{Math.round(item.amounts.total / 100)}</Text>
+                    {item.review ? (
+                      <View style={styles.ratedRow} testID={`order-rated-${item.id}`}>
+                        <Ionicons name="star" size={12} color={colors.warning} />
+                        <Text style={styles.ratedText}>You rated {item.review.rating}</Text>
+                      </View>
+                    ) : null}
+                  </View>
                   {ACTIVE_STATUSES.includes(item.status) ? (
                     <Pressable
                       testID={`track-button-${item.id}`}
@@ -170,7 +183,27 @@ export default function Orders() {
                     >
                       <Text style={styles.trackBtnText}>Track Order</Text>
                     </Pressable>
-                  ) : null}
+                  ) : (
+                    <View style={styles.actionRow}>
+                      {item.status === "DELIVERED" && !item.review ? (
+                        <Pressable
+                          testID={`rate-button-${item.id}`}
+                          style={styles.outlineBtn}
+                          onPress={() => router.push(`/order/${item.id}`)}
+                        >
+                          <Ionicons name="star-outline" size={14} color={colors.brandPrimary} />
+                          <Text style={styles.outlineBtnText}>Rate</Text>
+                        </Pressable>
+                      ) : null}
+                      <Pressable
+                        testID={`reorder-button-${item.id}`}
+                        style={styles.trackBtn}
+                        onPress={() => reorder(item)}
+                      >
+                        <Text style={styles.trackBtnText}>Reorder</Text>
+                      </Pressable>
+                    </View>
+                  )}
                 </View>
               </Pressable>
             )}
@@ -239,6 +272,22 @@ const useStyles = makeStyles((colors) => ({
     paddingTop: spacing.md,
   },
   total: { fontFamily: fonts.displayBold, fontSize: typeScale.lg, color: colors.onSurface },
+  totalWrap: { gap: 2 },
+  ratedRow: { flexDirection: "row", alignItems: "center", gap: 3 },
+  ratedText: { fontFamily: fonts.textMedium, fontSize: typeScale.sm, color: colors.muted },
+  actionRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  outlineBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 1,
+    borderColor: colors.brandPrimary,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    minHeight: 40,
+    justifyContent: "center",
+  },
+  outlineBtnText: { color: colors.brandPrimary, fontFamily: fonts.displaySemiBold, fontSize: typeScale.base },
   trackBtn: {
     backgroundColor: colors.brandPrimary,
     borderRadius: radius.sm,

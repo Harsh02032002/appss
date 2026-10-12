@@ -1,0 +1,35 @@
+{
+  "summary": "Full E2E verification of the 4 new DashBite features (Favourites, Coupons, Cancel-60s, Rating). Backend: 20/20 new pytest cases passed (test_new_features.py) covering favourites toggle+list+401+404, 4 coupons list, validate (percent/flat/free_delivery/case-insensitive/invalid/min-order), order creation with WELCOME50 (discount+total math) and FREEDEL (delivery_fee=0), cancel on CONFIRMED (status/timeline/payment_status), double-cancel 400, cancel on DELIVERED 400, review on non-delivered 400, rating=6 => 422, successful review 201 with duplicate 409 and review appearing in GET /api/restaurants/{id}.reviews. Frontend (Expo web, 390x844 mobile): (1) Guest heart tap on home shows 'Log in to save favourites' toast and redirects to /login; after login tap heart on restaurant card -> 'Added to favourites' toast + filled heart; Profile > profile-favorites-row -> /favorites lists saved restaurant; restaurant detail page shows heart top-right. (2) Checkout coupon section: invalid code 'BOGUS' rejected with 400 toast, WELCOME50 card tap -> coupon-applied + bill-discount row shown (To Pay 1762 -> 1662, -₹100), Remove restores, re-apply by typing 'welcome50' (case-insensitive) works; placed COD order #FE75BA2A total ₹1662. (3) Order details shows order-discount-row with 'Coupon (WELCOME50) -₹100'; order-cancel-button visible with 'Cancel order · Ns left' countdown; tapping -> window.confirm accepted -> status badge 'Cancelled', timeline adds Cancelled entry, order-details-reorder-button appears, cancel button disappears. (4) Orders tab > Past Orders segment shows cancelled card with Reorder, and delivered unrated cards with Rate; tapping Rate opens order-review-form (5 stars + review-comment + review-submit), selecting 4 stars + comment + submit -> order-review-done appears with filled stars + comment, and past card now shows order-rated-<id> 'You rated 4'. (5) Reorder from past card -> /cart populated with items from that restaurant. (6) Restaurant detail page shows 'What customers say' (restaurant-reviews) with the submitted review. Regression: Home loads, restaurant menu loads, cart math (₹1645 + ₹35 + ₹82 = ₹1762) correct, COD without coupon still works earlier, Track screen for CANCELLED order shows 'Order cancelled - Any payment made will be refunded.' banner. Minor non-blocking console warnings (shadow* -> boxShadow, props.pointerEvents, useNativeDriver JS fallback) were already noted in iteration_1.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_new_features.py",
+    "/app/backend/tests/test_dashbite_api.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/new_features_results.xml"
+  ],
+  "action_items": [
+    "(Optional, pre-existing) Reduce react-native-web console warnings (shadow* -> boxShadow, pointerEvents style migration, useNativeDriver JS fallback).",
+    "(Optional) Add testIDs to bottom tabs (e.g. tab-profile) to simplify UI tests - currently must navigate via /profile URL.",
+    "(Optional) review-submit Pressable on web does not expose HTML 'disabled' attribute (opacity-only); works fine for users but is_disabled() returns false in Playwright. Consider role=button+aria-disabled or a <button disabled> underneath for a11y."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 843 lines - above the 700-line split threshold. Consider modularizing (routes/, services/, models/) before adding more endpoints.",
+    "Coupons are hardcoded in a Python dict (COUPONS) - fine for MVP but move to Mongo if admin/dynamic coupons are planned.",
+    "Cancel endpoint correctly rejects >60s, non-cancellable statuses, cancels sim task, broadcasts over WS - solid.",
+    "Review endpoint correctly validates DELIVERED-only, duplicate 409, 422 rating range (Pydantic Field ge/le); review mirrored to reviews collection for restaurant aggregation.",
+    "Favourites unique index on (user_id, restaurant_id) prevents duplicates - good."
+  ],
+  "updated_files": ["/app/backend/tests/test_new_features.py"],
+  "success_rate": {"backend": "100% (20/20 new + 21/21 regression)", "frontend": "100% (all 4 new feature flows + regression)"},
+  "seed_data_creation": "During tests: toggled favourite on Biryani Blues Kitchen (added+removed, left clean); several TEST_ COD orders placed; one COD order 6acd4389534a985ffe75ba2a placed with WELCOME50 then cancelled; delivered order 6acd4253534a985ffe75ba25 rated 4 with comment 'TEST awesome biryani from automated review flow'; backend pytest fixtures created additional ephemeral orders (some flipped to DELIVERED in Mongo via module fixture) under test@dashbite.in.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_new_features.py (uses pymongo to flip orders to DELIVERED via MONGO_URL/DB_NAME from backend/.env). Frontend selectors confirmed: favorite-button-<id>, profile-favorites-row, favorites-screen, coupon-input, coupon-apply, coupon-card-<CODE>, coupon-applied, coupon-remove, bill-discount, place-order-button, order-discount-row, order-cancel-button, order-details-reorder-button, order-review-form, review-star-1..5, review-comment, review-submit, order-review-done, orders-tab-past, rate-button-<id>, reorder-button-<id>, order-rated-<id>, restaurant-reviews. Order confirmation URL is /order-confirmation?order_id=<id> (query param, not path); the details page is /order/<id>. Cart proceed button is 'proceed-checkout-button' (not 'cart-checkout-button'). Menu-item add is 'add-<item_id>' (not 'menu-item-add-<id>'). Bottom tabs have NO testIDs - navigate via URL (/home, /orders, /profile). window.confirm is used for cancel - must handle via page.on('dialog', d => d.accept()). Login token key in localStorage is NOT 'dashbite_token' (403 when assumed); use Playwright flows end-to-end or re-login via /api/auth/login.",
+  "rca_of_issue": "No bugs identified. All new features behave per spec. The only non-functional observation is on web, review-submit Pressable doesn't propagate disabled to the DOM (styling-only), so is_disabled() returns false even before a star is tapped - visually it is clearly disabled and tapping it with 0 stars is prevented by the handler."
+}

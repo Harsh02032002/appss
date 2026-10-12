@@ -128,6 +128,17 @@ class OrderCreateIn(BaseModel):
     address: OrderAddressSnapshot
     payment_method: str  # "cod" | "razorpay"
     tip: int = 0  # paise
+    coupon_code: str = ""
+
+
+class CouponValidateIn(BaseModel):
+    code: str
+    subtotal: int  # paise
+
+
+class ReviewIn(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    comment: str = Field(default="", max_length=500)
 
 
 # ------------------------------------------------------------------
@@ -267,7 +278,83 @@ async def restaurant_details(restaurant_id: str):
     if not doc:
         raise HTTPException(status_code=404, detail="Restaurant not found")
     items = await db.menu_items.find({"restaurant_id": doc["_id"]}).to_list(200)
-    return {"restaurant": restaurant_out(doc), "menu": [item_out(i) for i in items]}
+    reviews = await db.reviews.find({"restaurant_id": restaurant_id}).sort("created_at", -1).to_list(10)
+    for r in reviews:
+        r["id"] = str(r.pop("_id"))
+    return {"restaurant": restaurant_out(doc), "menu": [item_out(i) for i in items], "reviews": reviews}
+
+
+# ------------------------------------------------------------------
+# Favourites (auth)
+# ------------------------------------------------------------------
+@api_router.get("/favorites")
+async def list_favorites(user: dict = Depends(current_user)):
+    favs = await db.favorites.find({"user_id": str(user["_id"])}).sort("created_at", -1).to_list(200)
+    ids = [f["restaurant_id"] for f in favs]
+    docs = await db.restaurants.find({"_id": {"$in": [ObjectId(i) for i in ids]}}).to_list(200)
+    by_id = {str(d["_id"]): d for d in docs}
+    ordered = [restaurant_out(by_id[i]) for i in ids if i in by_id]
+    return {"ids": ids, "restaurants": ordered}
+
+
+@api_router.post("/favorites/{restaurant_id}")
+async def toggle_favorite(restaurant_id: str, user: dict = Depends(current_user)):
+    rest = await db.restaurants.find_one({"_id": oid(restaurant_id)})
+    if not rest:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+    uid = str(user["_id"])
+    existing = await db.favorites.find_one({"user_id": uid, "restaurant_id": restaurant_id})
+    if existing:
+        await db.favorites.delete_one({"_id": existing["_id"]})
+        return {"favorited": False}
+    await db.favorites.insert_one({"user_id": uid, "restaurant_id": restaurant_id, "created_at": now_iso()})
+    return {"favorited": True}
+
+
+# ------------------------------------------------------------------
+# Coupons
+# ------------------------------------------------------------------
+COUPONS = {
+    "WELCOME50": {"type": "percent", "value": 50, "max": 10000, "min_order": 19900,
+                  "title": "50% off up to ₹100", "description": "On orders above ₹199"},
+    "FLAT100": {"type": "flat", "value": 10000, "max": 10000, "min_order": 49900,
+                "title": "Flat ₹100 off", "description": "On orders above ₹499"},
+    "TASTY20": {"type": "percent", "value": 20, "max": 7500, "min_order": 14900,
+                "title": "20% off up to ₹75", "description": "On orders above ₹149"},
+    "FREEDEL": {"type": "free_delivery", "value": 0, "max": 0, "min_order": 29900,
+                "title": "Free delivery", "description": "On orders above ₹299"},
+}
+
+
+def apply_coupon(code: str, subtotal: int) -> dict:
+    """Returns {code, discount, free_delivery, title}. Raises 400 if invalid."""
+    code = code.strip().upper()
+    if not code:
+        return {"code": "", "discount": 0, "free_delivery": False, "title": ""}
+    c = COUPONS.get(code)
+    if not c:
+        raise HTTPException(status_code=400, detail="Invalid coupon code")
+    if subtotal < c["min_order"]:
+        raise HTTPException(status_code=400,
+                            detail=f"Add items worth ₹{(c['min_order'] - subtotal) // 100 + 1} more to use {code}")
+    if c["type"] == "percent":
+        discount = min(round(subtotal * c["value"] / 100), c["max"])
+    elif c["type"] == "flat":
+        discount = min(c["value"], subtotal)
+    else:
+        discount = 0
+    return {"code": code, "discount": discount, "free_delivery": c["type"] == "free_delivery", "title": c["title"]}
+
+
+@api_router.get("/coupons")
+async def list_coupons():
+    return {"coupons": [{"code": k, "title": v["title"], "description": v["description"],
+                         "min_order": v["min_order"]} for k, v in COUPONS.items()]}
+
+
+@api_router.post("/coupons/validate")
+async def validate_coupon(body: CouponValidateIn):
+    return apply_coupon(body.code, body.subtotal)
 
 
 @api_router.get("/menu-items/{item_id}")
@@ -410,7 +497,10 @@ async def create_order(body: OrderCreateIn, user: dict = Depends(current_user)):
         raise HTTPException(status_code=400, detail="Cart is empty")
     line_items, restaurant_id, subtotal, taxes = await compute_totals(body.items)
     tip = max(0, body.tip)
-    total = subtotal + DELIVERY_FEE + taxes + tip
+    coupon = apply_coupon(body.coupon_code, subtotal)
+    delivery_fee = 0 if coupon["free_delivery"] else DELIVERY_FEE
+    discount = coupon["discount"]
+    total = subtotal + delivery_fee + taxes + tip - discount
     restaurant = await db.restaurants.find_one({"_id": restaurant_id})
     address = body.address.model_dump()
     if address.get("lat") is None:
@@ -425,8 +515,10 @@ async def create_order(body: OrderCreateIn, user: dict = Depends(current_user)):
                        "lat": restaurant.get("lat"), "lng": restaurant.get("lng")},
         "items": line_items,
         "address": address,
-        "amounts": {"subtotal": subtotal, "delivery_fee": DELIVERY_FEE,
-                    "taxes": taxes, "tip": tip, "total": total},
+        "amounts": {"subtotal": subtotal, "delivery_fee": delivery_fee,
+                    "taxes": taxes, "tip": tip, "discount": discount, "total": total},
+        "coupon_code": coupon["code"],
+        "review": None,
         "payment_method": body.payment_method,
         "payment_status": "pending",
         "status": "PAYMENT_PENDING" if body.payment_method == "razorpay" else "CONFIRMED",
@@ -560,6 +652,53 @@ async def get_order(order_id: str, user: dict = Depends(current_user)):
     return order_out(doc)
 
 
+CANCEL_WINDOW_SECONDS = 60
+CANCELLABLE = {"PAYMENT_PENDING", "CONFIRMED", "PREPARING"}
+
+
+@api_router.post("/orders/{order_id}/cancel")
+async def cancel_order(order_id: str, user: dict = Depends(current_user)):
+    order = await db.orders.find_one({"_id": oid(order_id), "user_id": str(user["_id"])})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order["status"] not in CANCELLABLE:
+        raise HTTPException(status_code=400, detail="This order can no longer be cancelled")
+    age = (datetime.now(timezone.utc) - datetime.fromisoformat(order["created_at"])).total_seconds()
+    if age > CANCEL_WINDOW_SECONDS:
+        raise HTTPException(status_code=400, detail="Cancellation window (60s) has passed")
+    task = sim_tasks.pop(order_id, None)
+    if task and not task.done():
+        task.cancel()
+    payment_status = "refund_initiated" if order.get("payment_status") == "paid" else "cancelled"
+    await db.orders.update_one(
+        {"_id": order["_id"]},
+        {"$set": {"status": "CANCELLED", "payment_status": payment_status},
+         "$push": {"timeline": {"status": "CANCELLED", "at": now_iso()}}})
+    await manager.broadcast(order_id, {"type": "status", "status": "CANCELLED", "eta_mins": 0})
+    doc = await db.orders.find_one({"_id": order["_id"]})
+    return order_out(doc)
+
+
+@api_router.post("/orders/{order_id}/review", status_code=201)
+async def review_order(order_id: str, body: ReviewIn, user: dict = Depends(current_user)):
+    order = await db.orders.find_one({"_id": oid(order_id), "user_id": str(user["_id"])})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order["status"] != "DELIVERED":
+        raise HTTPException(status_code=400, detail="You can rate an order only after delivery")
+    if order.get("review"):
+        raise HTTPException(status_code=409, detail="Order already reviewed")
+    review = {"rating": body.rating, "comment": body.comment.strip(), "at": now_iso()}
+    await db.orders.update_one({"_id": order["_id"]}, {"$set": {"review": review}})
+    await db.reviews.insert_one({
+        "order_id": order_id, "user_id": str(user["_id"]), "user_name": user["name"],
+        "restaurant_id": order["restaurant"]["id"], "rating": body.rating,
+        "comment": review["comment"], "created_at": review["at"],
+    })
+    doc = await db.orders.find_one({"_id": order["_id"]})
+    return order_out(doc)
+
+
 # ------------------------------------------------------------------
 # Live order tracking (WebSocket + simulated progression)
 # ------------------------------------------------------------------
@@ -677,6 +816,8 @@ async def order_ws(websocket: WebSocket, order_id: str):
 @app.on_event("startup")
 async def startup():
     await db.users.create_index("email", unique=True)
+    await db.favorites.create_index([("user_id", 1), ("restaurant_id", 1)], unique=True)
+    await db.reviews.create_index("restaurant_id")
     count = await db.restaurants.count_documents({})
     if count == 0:
         r, m = await seed_database(db)

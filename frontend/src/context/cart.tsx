@@ -34,6 +34,7 @@ type CartContextType = CartState & {
   increment: (id: string) => void;
   decrement: (id: string) => void;
   getQty: (id: string) => number;
+  replaceCart: (items: CartItem[], restaurant: { id: string; name: string }) => void;
   clear: () => void;
   hydrated: boolean;
 };
@@ -90,6 +91,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       return items.length ? { ...prev, items } : EMPTY;
     });
 
+  const replaceCart: CartContextType["replaceCart"] = (items, restaurant) =>
+    setState({ restaurantId: restaurant.id, restaurantName: restaurant.name, items });
+
   const clear = () => setState(EMPTY);
 
   const getQty = (id: string) => state.items.find((i) => i.id === id)?.qty ?? 0;
@@ -103,7 +107,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <CartContext.Provider
-      value={{ ...state, count, subtotal, addItem, increment, decrement, getQty, clear, hydrated }}
+      value={{ ...state, count, subtotal, addItem, increment, decrement, getQty, replaceCart, clear, hydrated }}
     >
       {children}
     </CartContext.Provider>
