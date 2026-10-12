@@ -1,0 +1,352 @@
+{
+  "app_name": "DashBite",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A pristine, iOS-native food delivery experience featuring warm sand surfaces, crisp typography, and high-intent culinary discovery.",
+  "color": {
+    "surface": "#FDFBF7",
+    "onSurface": "#1A1917",
+    "surfaceSecondary": "#F4EFE6",
+    "onSurfaceSecondary": "#2C2A26",
+    "surfaceTertiary": "#EAE3D5",
+    "onSurfaceTertiary": "#403D36",
+    "surfaceInverse": "#1A1917",
+    "onSurfaceInverse": "#FDFBF7",
+    "brand": "#D95325",
+    "brandPrimary": "#D95325",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#B84018",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#FBEAE5",
+    "onBrandTertiary": "#D95325",
+    "success": "#388E3C",
+    "onSuccess": "#FFFFFF",
+    "warning": "#F57C00",
+    "onWarning": "#FFFFFF",
+    "error": "#D32F2F",
+    "onError": "#FFFFFF",
+    "info": "#0288D1",
+    "onInfo": "#FFFFFF",
+    "border": "#E2DACB",
+    "borderStrong": "#C8BCAB",
+    "divider": "#EFEAE0",
+    "muted": "#7A746A",
+    "onBrand": "#FFFFFF"
+  },
+  "typography": {
+    "displayFontFamily": "PlusJakartaSans",
+    "textFontFamily": "Geist",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical breathing room with iOS-native padding rhythms and sticky lower-third primary CTAs.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "Ionicons",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use translucent frosted glass for sticky headers and bottom tab bars over scrolling content",
+      "Pair blur with ≥70% tinted surface base for guaranteed contrast"
+    ],
+    "dont's": [
+      "Never blur form fields or body text regions",
+      "Avoid glass on dense data tables where clarity beats aesthetics"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Splash",
+      "purpose": "Cinematic app entry with brand mark and automatic token session verification.",
+      "states": {
+        "loading": "Checking secure session and loading config...",
+        "empty": "N/A",
+        "error": "Failed to connect to backend server. Tap to retry."
+      },
+      "layout": "Centered logo mark on warm sand surface with subtle vertical gradient and bottom branding."
+    },
+    {
+      "name": "Onboarding",
+      "purpose": "Engage new users with a 3-step value proposition visual tour.",
+      "states": {
+        "loading": "Loading visual presentation...",
+        "empty": "N/A",
+        "error": "Failed to load onboarding assets."
+      },
+      "layout": "Full-bleed editorial carousel with dot pagination and bottom sticky action buttons."
+    },
+    {
+      "name": "Login",
+      "purpose": "Secure authentication via email and password with JWT token storage.",
+      "states": {
+        "loading": "Authenticating credentials...",
+        "empty": "N/A",
+        "error": "Invalid email or password. Please try again."
+      },
+      "layout": "Vertical single-column form with clear labels above inputs and bottom sticky submit."
+    },
+    {
+      "name": "Registration",
+      "purpose": "New user account creation with email, phone, and secure password.",
+      "states": {
+        "loading": "Creating your account...",
+        "empty": "N/A",
+        "error": "Registration failed. Email may already be in use."
+      },
+      "layout": "Scrollable vertical form with validation feedback and sticky register CTA."
+    },
+    {
+      "name": "OTP Verification",
+      "purpose": "Confirm phone number or email via 6-digit verification code.",
+      "states": {
+        "loading": "Verifying code...",
+        "empty": "N/A",
+        "error": "Incorrect verification code entered."
+      },
+      "layout": "Centered OTP input boxes with automatic focus progression and resend timer."
+    },
+    {
+      "name": "Home",
+      "purpose": "High-intent culinary discovery featuring address header, search, categories, and curated restaurant feeds.",
+      "states": {
+        "loading": "Fetching nearby restaurants and recommended dishes...",
+        "empty": "No restaurants available in your delivery zone.",
+        "error": "Unable to load home feed. Please check connection."
+      },
+      "layout": "Sticky glass header with address selector, horizontal category chips, promotional carousel, and vertical restaurant list with real logo PNGs."
+    },
+    {
+      "name": "Search",
+      "purpose": "Instant restaurant and dish lookup with intent-driven filter tabs.",
+      "states": {
+        "loading": "Searching menu items and restaurants...",
+        "empty": "No dishes or restaurants found matching your query.",
+        "error": "Search service temporarily unavailable."
+      },
+      "layout": "Top search bar with cancel button, segmented mode tabs (Restaurants / Dishes), and dynamic results list."
+    },
+    {
+      "name": "Restaurant Listing",
+      "purpose": "Filtered directory of restaurants by cuisine, rating, and delivery time.",
+      "states": {
+        "loading": "Loading restaurants...",
+        "empty": "No restaurants match the selected filter criteria.",
+        "error": "Failed to fetch restaurant directory."
+      },
+      "layout": "Horizontal filter chip bar at top followed by vertical list of restaurant cards with ratings and delivery estimates."
+    },
+    {
+      "name": "Restaurant Details",
+      "purpose": "Comprehensive restaurant storefront with menu categories and dish browsing.",
+      "states": {
+        "loading": "Loading restaurant menu...",
+        "empty": "This restaurant has no active menu items.",
+        "error": "Failed to load restaurant profile."
+      },
+      "layout": "Hero image banner with gradient scrim, restaurant info card, sticky horizontal category tab bar, and grouped menu items with add actions."
+    },
+    {
+      "name": "Food Menu",
+      "purpose": "Categorized menu browsing with quick dietary filters and search.",
+      "states": {
+        "loading": "Loading menu categories...",
+        "empty": "No items found in this category.",
+        "error": "Failed to load menu."
+      },
+      "layout": "Sticky category header bar with horizontal scrolling tabs and detailed item cards."
+    },
+    {
+      "name": "Food Item Details & Customization",
+      "purpose": "Detailed view for customizing dishes with add-ons, sizes, and special notes.",
+      "states": {
+        "loading": "Loading item customization options...",
+        "empty": "Item details unavailable.",
+        "error": "Failed to load item."
+      },
+      "layout": "Modal bottom sheet with high-resolution image, radio option groups for sizes, checkbox groups for add-ons, special instruction text input, and sticky bottom Add to Cart bar with price calculator."
+    },
+    {
+      "name": "Cart",
+      "purpose": "Review selected items, adjust quantities, apply discounts, and inspect itemized bill breakdown.",
+      "states": {
+        "loading": "Updating cart summary...",
+        "empty": "Your cart is empty. Explore restaurants to add delicious meals.",
+        "error": "Failed to update cart."
+      },
+      "layout": "Scrollable list of cart items with quantity steppers, special instructions input, bill details breakdown card, and sticky bottom Proceed to Checkout bar."
+    },
+    {
+      "name": "Checkout",
+      "purpose": "Review delivery address, payment method, order summary, and finalize placement.",
+      "states": {
+        "loading": "Preparing checkout summary...",
+        "empty": "Cart is empty. Add items before checking out.",
+        "error": "Failed to initialize checkout."
+      },
+      "layout": "Scrollable sections for Delivery Address tile, Payment Method tile, Tip selector, Bill summary, and sticky bottom Place Order button."
+    },
+    {
+      "name": "Address Selection",
+      "purpose": "Select from saved delivery addresses or detect current device GPS location.",
+      "states": {
+        "loading": "Detecting GPS location and fetching saved addresses...",
+        "empty": "No saved delivery addresses found.",
+        "error": "Failed to retrieve location."
+      },
+      "layout": "Top 'Use current location' GPS button card, followed by list of saved address radio cards and 'Add New Address' action button."
+    },
+    {
+      "name": "Add/Edit Delivery Address",
+      "purpose": "Form to input detailed street address, house number, landmark, and address tag.",
+      "states": {
+        "loading": "Saving address...",
+        "empty": "N/A",
+        "error": "Failed to save address details."
+      },
+      "layout": "Interactive map preview mockup at top, followed by form fields for House/Flat No, Street, Landmark, Tag selector (Home, Work, Other), and sticky save button."
+    },
+    {
+      "name": "Payment Selection",
+      "purpose": "Choose between Cash on Delivery and Razorpay secure gateway.",
+      "states": {
+        "loading": "Initializing payment gateway...",
+        "empty": "No payment methods configured.",
+        "error": "Payment initialization failed."
+      },
+      "layout": "Grouped payment option cards with icons, secure badges, and sticky confirm payment action."
+    },
+    {
+      "name": "Order Confirmation",
+      "purpose": "Celebrate successful order placement with order ID, estimated delivery, and action buttons.",
+      "states": {
+        "loading": "Placing order and notifying restaurant...",
+        "empty": "N/A",
+        "error": "Order placement failed. Please verify payment."
+      },
+      "layout": "Centered success animation card, order reference number, delivery ETA countdown, and dual action buttons (Track Order, Back to Home)."
+    },
+    {
+      "name": "My Orders",
+      "purpose": "Chronological history of active and past food orders with quick status tags and reorder action.",
+      "states": {
+        "loading": "Loading your order history...",
+        "empty": "You have not placed any orders yet. Start your culinary journey!",
+        "error": "Failed to load orders."
+      },
+      "layout": "Segmented tab bar (Active / Past Orders) and vertical list of order summary cards with status badges and action buttons."
+    },
+    {
+      "name": "Order Details",
+      "purpose": "Deep dive into a specific past or active order with itemized receipt, delivery address, and support link.",
+      "states": {
+        "loading": "Loading order details...",
+        "empty": "Order not found.",
+        "error": "Failed to fetch order details."
+      },
+      "layout": "Scrollable receipt view with restaurant header, status timeline, itemized bill breakdown, delivery address card, and support button."
+    },
+    {
+      "name": "Track Order",
+      "purpose": "Real-time order tracking with live simulated rider progression and Socket.IO updates.",
+      "states": {
+        "loading": "Connecting to delivery tracking...",
+        "empty": "Tracking information unavailable.",
+        "error": "Connection lost. Reconnecting to live tracker..."
+      },
+      "layout": "Top interactive map view with rider GPS marker, bottom sliding sheet containing delivery ETA, rider contact card (Call / Chat), and vertical status timeline stepper."
+    },
+    {
+      "name": "Customer Profile",
+      "purpose": "Manage account details, saved addresses, payment methods, preferences, and logout.",
+      "states": {
+        "loading": "Loading profile information...",
+        "empty": "N/A",
+        "error": "Failed to load profile."
+      },
+      "layout": "User avatar header with membership badge, grouped settings navigation rows with tinted icon containers, and logout button."
+    },
+    {
+      "name": "Saved Addresses",
+      "purpose": "Dedicated screen to view, edit, and delete saved delivery locations.",
+      "states": {
+        "loading": "Loading saved addresses...",
+        "empty": "No saved addresses. Add a delivery location for faster checkout.",
+        "error": "Failed to load addresses."
+      },
+      "layout": "Vertical list of address cards with tag icons, edit/delete actions, and floating add address button."
+    },
+    {
+      "name": "Help and Support",
+      "purpose": "Customer support FAQ and instant live chat ticket creation for order issues.",
+      "states": {
+        "loading": "Loading support topics...",
+        "empty": "No support articles available.",
+        "error": "Failed to load support center."
+      },
+      "layout": "Top search bar for help topics, collapsible FAQ accordion categories, and 'Chat with Us' banner."
+    }
+  ],
+  "images": {
+    "hero_banner_1": {
+      "url": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?q=80&w=1200&auto=format&fit=crop",
+      "alt": "Delicious gourmet burger and artisan fries feast"
+    },
+    "hero_banner_2": {
+      "url": "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?q=80&w=1200&auto=format&fit=crop",
+      "alt": "Wood-fired artisanal pizza with fresh basil"
+    },
+    "onboarding_1": {
+      "url": "https://images.unsplash.com/photo-1526367790999-0150786686a2?q=80&w=1000&auto=format&fit=crop",
+      "alt": "Speedy food delivery scooter in city"
+    },
+    "onboarding_2": {
+      "url": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?q=80&w=1000&auto=format&fit=crop",
+      "alt": "Top restaurants and master chefs"
+    },
+    "onboarding_3": {
+      "url": "https://images.unsplash.com/photo-1504754524776-8f4f37790ca0?q=80&w=1000&auto=format&fit=crop",
+      "alt": "Fresh and healthy meal bowls"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Build a complete React Native Expo customer food delivery app connecting to the Node.js Express MongoDB backend.",
+    "Ensure all 23 screens requested in the problem statement are fully implemented, navigable via Expo Router, and include loading, empty, and error states.",
+    "Strictly follow iOS-Native Clean personality with warm sand surfaces (#FDFBF7), terracotta brand accents (#D95325), and Geist/Plus Jakarta Sans typography.",
+    "Never use indigo, violet, purple, or navy blue. Use near-black text on warm sand surfaces.",
+    "Implement real logo PNG fetching for restaurants and branded entities using image_selector_tool or realistic fallback initials avatars.",
+    "Include sticky glass headers and sticky lower-third primary CTAs over scrolling content where applicable.",
+    "Integrate Socket.IO for real-time order tracking and simulated rider GPS movement.",
+    "Ensure all touch targets are >= 44x44pt and safe areas are fully respected."
+  ]
+}

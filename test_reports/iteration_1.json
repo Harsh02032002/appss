@@ -1,0 +1,32 @@
+{
+  "summary": "Full-stack E2E verification of DashBite. Backend: 21/21 pytest passed (health, home, 8 seeded restaurants, cuisine filter, restaurant+menu details, search restaurants+dishes, auth register/login/wrong-password/me, address CRUD, COD order create with exact bill math, mixed-restaurant & empty-cart rejection, ownership). WebSocket verified via python client: init CONFIRMED -> PREPARING @15s -> OUT_FOR_DELIVERY @40s. Frontend (Expo web, mobile viewport): all 15 requested flows passed - splash->onboarding->guest home, home header/chips (8->1 biryani filter)/banners/cards, search restaurants+dishes+dish ADD, restaurant details + item modal (qty/notes/add), cart bill math (987+35+49=1071), guest orders login prompt, guest checkout login redirect, wrong-password error, register, login test@dashbite.in, address add/list/select, COD checkout (329+35+16+tip20=400) -> order-confirmation #EA34C94D, orders tab Active+Confirmed badge, order details (items/timeline/bill/address), live track (LIVE badge, Confirmed->Preparing@15s->On the way@40s, rider card, ETA countdown), profile rows + logout, help FAQ accordion + search filter. Pay Online option renders (not tested further per known Razorpay 401). No deprecated expo packages, no red screens, no unexpected console errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Search tab", "issues": ["No view-cart bar after adding a dish from search - user must switch to Home tab (or restaurant page) to reach cart. Minor UX gap; home tab's cart bar stays mounted in DOM behind search screen (inactive tabs remain mounted on web), which also confuses test automation selectors."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_dashbite_api.py", "/app/backend/tests/conftest.py", "/app/backend/tests/ws_manual_check.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Optional UX: render a view-cart bar (or cart entry point) on the Search tab after items are added from dish search results.",
+    "Optional: fix react-native-web console warnings (shadow* props -> boxShadow, props.pointerEvents deprecation) - cosmetic only."
+  ],
+  "critical_code_review_comments": [
+    "Backend server.py is exactly 702 lines - at the split threshold; consider modularizing (routes/services) if more endpoints are added.",
+    "Order simulation resumes correctly after server restart via startup hook - good.",
+    "ObjectId handling, _id exclusion, JWT auth, bill recomputation server-side (client totals not trusted), single-restaurant enforcement, and idempotent payment verify are all correctly implemented.",
+    "testID coverage is excellent across all interactive elements."
+  ],
+  "updated_files": ["/app/backend/tests/conftest.py", "/app/backend/tests/test_dashbite_api.py", "/app/backend/tests/ws_manual_check.py"],
+  "success_rate": {"backend": "100% (21/21 + WS)", "frontend": "100% (all 15 flows)"},
+  "seed_data_creation": "Created test data prefixed TEST_: registered users TEST_pw_*, TEST_user_*; addresses 'TEST 221, 5th Cross, HSR Layout' and 'TEST 12 MG Road'; COD orders 6acd3dcc86d12daaea34c94d, 6acd3e1986d12daaea34c94e (+ pytest-created orders) for test@dashbite.in.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_dashbite_api.py as regression suite (BASE_URL hardcoded to https://feastwave.preview.emergentagent.com in conftest.py). Playwright notes: (1) inactive tab screens stay mounted in DOM - scope selectors to the active screen or use first-match carefully; view-cart-bar exists only on Home and Restaurant screens, NOT on Search. (2) Never force-click list buttons while FlatList is re-rendering (rows shift - use precise non-force clicks after settle waits). (3) Each browser_automation run is a fresh context - re-login and re-add cart items per run, or place orders via page.evaluate fetch with token from localStorage key 'dashbite_token'. (4) Track screen transitions: PREPARING at ~15s, OUT_FOR_DELIVERY at ~40s, DELIVERED at ~100s. Razorpay keys invalid (known, user-owned)."
+}
