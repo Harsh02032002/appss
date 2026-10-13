@@ -87,6 +87,10 @@ export default function RestaurantDetails() {
   }
 
   const add = (item: MenuItem) => {
+    if (restaurant.is_open === false) {
+      showToast(`${restaurant.name} is currently closed`, "error");
+      return;
+    }
     const result = cart.addItem(
       { id: item.id, name: item.name, price: item.price, image: item.image, veg: item.veg },
       { id: restaurant.id, name: restaurant.name },
@@ -116,6 +120,12 @@ export default function RestaurantDetails() {
               <Text style={styles.name}>{restaurant.name}</Text>
               <RatingBadge rating={restaurant.rating} />
             </View>
+            {restaurant.is_open === false ? (
+              <View style={styles.closedRow} testID="restaurant-closed">
+                <Ionicons name="moon" size={13} color="#B3261E" />
+                <Text style={styles.closedText}>Currently closed · not accepting orders</Text>
+              </View>
+            ) : null}
             <Text style={styles.cuisines}>{restaurant.cuisines.join(" • ")}</Text>
             <View style={styles.metaRow}>
               <Ionicons name="time-outline" size={14} color="#7A746A" />
@@ -305,6 +315,8 @@ const useStyles = makeStyles((colors) => ({
   name: { fontFamily: fonts.displayBold, fontSize: typeScale.xxl, color: colors.onSurface, flex: 1, letterSpacing: -0.4 },
   cuisines: { fontFamily: fonts.text, fontSize: typeScale.base, color: colors.muted },
   metaRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, marginTop: spacing.xs },
+  closedRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, marginTop: spacing.xs },
+  closedText: { fontFamily: fonts.displaySemiBold, fontSize: typeScale.sm, color: colors.error },
   meta: { fontFamily: fonts.textMedium, fontSize: typeScale.sm, color: colors.onSurfaceTertiary },
   dot: { width: 3, height: 3, borderRadius: 2, backgroundColor: colors.borderStrong },
   offerRow: {

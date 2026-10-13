@@ -24,17 +24,21 @@ export type Order = {
   payment_method: string;
   payment_status: string;
   status: string;
-  rider?: { name: string; phone: string; lat?: number; lng?: number };
+  rider?: { id?: string; name: string; phone: string; vehicle?: string; lat?: number; lng?: number } | null;
+  customer?: { name: string; phone: string };
+  cancel_reason?: string;
   timeline: { status: string; at: string }[];
   created_at: string;
 };
 
-export const ACTIVE_STATUSES = ["CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY"];
+export const ACTIVE_STATUSES = ["PLACED", "CONFIRMED", "PREPARING", "READY", "OUT_FOR_DELIVERY"];
 
 export const STATUS_LABELS: Record<string, string> = {
   PAYMENT_PENDING: "Payment Pending",
-  CONFIRMED: "Confirmed",
+  PLACED: "Placed",
+  CONFIRMED: "Accepted",
   PREPARING: "Preparing",
+  READY: "Ready for pickup",
   OUT_FOR_DELIVERY: "On the way",
   DELIVERED: "Delivered",
   CANCELLED: "Cancelled",
@@ -42,9 +46,12 @@ export const STATUS_LABELS: Record<string, string> = {
 
 export function statusColor(status: string, colors: any): string {
   switch (status) {
+    case "PLACED":
+      return colors.muted;
     case "CONFIRMED":
       return colors.info;
     case "PREPARING":
+    case "READY":
       return colors.warning;
     case "OUT_FOR_DELIVERY":
       return colors.brandPrimary;

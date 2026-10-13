@@ -1,45 +1,30 @@
-from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Request
+from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from pydantic import BaseModel, Field, ConfigDict, EmailStr, BeforeValidator
 from typing import Optional, List, Annotated
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 import os
 import re
 import hmac
 import hashlib
-import asyncio
-import logging
 import bcrypt
 import jwt
 import httpx
 
+from core import (client, db, logger, JWT_SECRET, JWT_ALGORITHM, JWT_DAYS, now_iso, oid, order_out,
+                  ETA_BY_STATUS, manager, notify_partner, spawn_delivery, cancel_simulation)
 from seed import seed_database, CATEGORIES, BANNERS
+from partner import router as partner_router, seed_partners
 
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
-
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
-
-JWT_SECRET = os.environ['JWT_SECRET']
-JWT_ALGORITHM = "HS256"
-JWT_DAYS = 7
 RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', '')
 RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '')
 RAZORPAY_URL = "https://api.razorpay.com/v1"
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
 # ------------------------------------------------------------------
 # Mongo helpers (ObjectId <-> str)
@@ -60,16 +45,6 @@ class BaseDocument(BaseModel):
     @classmethod
     def from_mongo(cls, doc: dict):
         return cls(**doc)
-
-
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def oid(id_str: str) -> ObjectId:
-    if not ObjectId.is_valid(id_str):
-        raise HTTPException(status_code=404, detail="Not found")
-    return ObjectId(id_str)
 
 
 # ------------------------------------------------------------------
@@ -229,6 +204,7 @@ def restaurant_out(doc: dict) -> dict:
     d = dict(doc)
     d["id"] = str(d.pop("_id"))
     d.pop("created_at", None)
+    d.setdefault("is_open", True)
     return d
 
 
@@ -237,6 +213,7 @@ def item_out(doc: dict) -> dict:
     d["id"] = str(d.pop("_id"))
     d["restaurant_id"] = str(d["restaurant_id"])
     d.pop("created_at", None)
+    d.setdefault("available", True)
     return d
 
 
@@ -256,7 +233,8 @@ async def home():
 
 
 @api_router.get("/restaurants")
-async def list_restaurants(q: str = "", cuisine: str = "", sort: str = ""):
+async def list_restaurants(q: str = "", cuisine: str = "", sort: str = "", veg_only: bool = False,
+                           rating_min: float = 0):
     query: dict = {}
     if cuisine:
         query["cuisines"] = {"$regex": f"^{re.escape(cuisine)}$", "$options": "i"}
@@ -265,10 +243,25 @@ async def list_restaurants(q: str = "", cuisine: str = "", sort: str = ""):
             {"name": {"$regex": re.escape(q), "$options": "i"}},
             {"cuisines": {"$regex": re.escape(q), "$options": "i"}},
         ]
-    cursor = db.restaurants.find(query)
+    if rating_min > 0:
+        query["rating"] = {"$gte": rating_min}
+    if veg_only:
+        non_veg_rids = await db.menu_items.distinct("restaurant_id", {"veg": False})
+        query["_id"] = {"$nin": non_veg_rids}
+    docs = await db.restaurants.find(query).to_list(100)
+
+    def first_minutes(r):
+        m = re.search(r"\d+", r.get("delivery_time", ""))
+        return int(m.group()) if m else 999
+
     if sort == "rating":
-        cursor = cursor.sort("rating", -1)
-    docs = await cursor.to_list(100)
+        docs.sort(key=lambda r: r.get("rating", 0), reverse=True)
+    elif sort == "time":
+        docs.sort(key=first_minutes)
+    elif sort == "price_low":
+        docs.sort(key=lambda r: r.get("price_for_two", 0))
+    elif sort == "price_high":
+        docs.sort(key=lambda r: r.get("price_for_two", 0), reverse=True)
     return {"restaurants": [restaurant_out(d) for d in docs]}
 
 
@@ -443,15 +436,7 @@ async def delete_address(address_id: str, user: dict = Depends(current_user)):
 # ------------------------------------------------------------------
 # Orders + Payments
 # ------------------------------------------------------------------
-ORDER_STATUSES = ["PAYMENT_PENDING", "CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY", "DELIVERED"]
 DELIVERY_FEE = 3500  # paise
-RIDER = {"name": "Ravi Kumar", "phone": "+91 98765 43210"}
-
-
-def order_out(doc: dict) -> dict:
-    d = dict(doc)
-    d["id"] = str(d.pop("_id"))
-    return d
 
 
 async def compute_totals(items: List[OrderItemIn]):
@@ -463,6 +448,9 @@ async def compute_totals(items: List[OrderItemIn]):
     restaurant_ids = {d["restaurant_id"] for d in docs}
     if len(restaurant_ids) != 1:
         raise HTTPException(status_code=400, detail="All items must be from one restaurant")
+    unavailable = [d["name"] for d in docs if not d.get("available", True)]
+    if unavailable:
+        raise HTTPException(status_code=400, detail=f"{unavailable[0]} is currently unavailable")
     line_items = []
     subtotal = 0
     for i in items:
@@ -502,6 +490,8 @@ async def create_order(body: OrderCreateIn, user: dict = Depends(current_user)):
     discount = coupon["discount"]
     total = subtotal + delivery_fee + taxes + tip - discount
     restaurant = await db.restaurants.find_one({"_id": restaurant_id})
+    if not restaurant.get("is_open", True):
+        raise HTTPException(status_code=400, detail=f"{restaurant['name']} is currently closed")
     address = body.address.model_dump()
     if address.get("lat") is None:
         address["lat"] = (restaurant.get("lat") or 12.9716) + 0.018
@@ -521,10 +511,11 @@ async def create_order(body: OrderCreateIn, user: dict = Depends(current_user)):
         "review": None,
         "payment_method": body.payment_method,
         "payment_status": "pending",
-        "status": "PAYMENT_PENDING" if body.payment_method == "razorpay" else "CONFIRMED",
+        "status": "PAYMENT_PENDING" if body.payment_method == "razorpay" else "PLACED",
         "razorpay_order_id": None,
         "razorpay_payment_id": None,
-        "rider": {**RIDER, "lat": restaurant.get("lat"), "lng": restaurant.get("lng")},
+        "customer": {"name": user["name"], "phone": user.get("phone", "")},
+        "rider": None,
         "timeline": [],
         "created_at": now_iso(),
     }
@@ -539,9 +530,9 @@ async def create_order(body: OrderCreateIn, user: dict = Depends(current_user)):
                          "key_id": RAZORPAY_KEY_ID},
         }
 
-    order_doc["timeline"] = [{"status": "CONFIRMED", "at": now_iso()}]
+    order_doc["timeline"] = [{"status": "PLACED", "at": now_iso()}]
     await db.orders.insert_one(order_doc)
-    spawn_simulation(str(order_doc["_id"]))
+    await notify_partner(order_doc, "order_new")
     return {"order": order_out(order_doc), "razorpay": None}
 
 
@@ -565,11 +556,11 @@ async def verify_payment(body: VerifyIn, user: dict = Depends(current_user)):
         raise HTTPException(status_code=400, detail="Invalid payment signature")
     await db.orders.update_one(
         {"_id": order["_id"]},
-        {"$set": {"payment_status": "paid", "status": "CONFIRMED",
+        {"$set": {"payment_status": "paid", "status": "PLACED",
                   "razorpay_payment_id": body.razorpay_payment_id,
-                  "timeline": order.get("timeline", []) + [{"status": "CONFIRMED", "at": now_iso()}]}})
-    spawn_simulation(str(order["_id"]))
+                  "timeline": order.get("timeline", []) + [{"status": "PLACED", "at": now_iso()}]}})
     doc = await db.orders.find_one({"_id": order["_id"]})
+    await notify_partner(doc, "order_new")
     return {"ok": True, "order": order_out(doc)}
 
 
@@ -631,10 +622,11 @@ async def verify_payment_public(body: VerifyPublicIn):
         raise HTTPException(status_code=400, detail="Invalid payment signature")
     await db.orders.update_one(
         {"_id": order["_id"], "payment_status": {"$ne": "paid"}},
-        {"$set": {"payment_status": "paid", "status": "CONFIRMED",
+        {"$set": {"payment_status": "paid", "status": "PLACED",
                   "razorpay_payment_id": body.razorpay_payment_id,
-                  "timeline": order.get("timeline", []) + [{"status": "CONFIRMED", "at": now_iso()}]}})
-    spawn_simulation(str(order["_id"]))
+                  "timeline": order.get("timeline", []) + [{"status": "PLACED", "at": now_iso()}]}})
+    doc = await db.orders.find_one({"_id": order["_id"]})
+    await notify_partner(doc, "order_new")
     return {"ok": True}
 
 
@@ -653,7 +645,7 @@ async def get_order(order_id: str, user: dict = Depends(current_user)):
 
 
 CANCEL_WINDOW_SECONDS = 60
-CANCELLABLE = {"PAYMENT_PENDING", "CONFIRMED", "PREPARING"}
+CANCELLABLE = {"PAYMENT_PENDING", "PLACED", "CONFIRMED", "PREPARING"}
 
 
 @api_router.post("/orders/{order_id}/cancel")
@@ -666,9 +658,7 @@ async def cancel_order(order_id: str, user: dict = Depends(current_user)):
     age = (datetime.now(timezone.utc) - datetime.fromisoformat(order["created_at"])).total_seconds()
     if age > CANCEL_WINDOW_SECONDS:
         raise HTTPException(status_code=400, detail="Cancellation window (60s) has passed")
-    task = sim_tasks.pop(order_id, None)
-    if task and not task.done():
-        task.cancel()
+    cancel_simulation(order_id)
     payment_status = "refund_initiated" if order.get("payment_status") == "paid" else "cancelled"
     await db.orders.update_one(
         {"_id": order["_id"]},
@@ -676,6 +666,7 @@ async def cancel_order(order_id: str, user: dict = Depends(current_user)):
          "$push": {"timeline": {"status": "CANCELLED", "at": now_iso()}}})
     await manager.broadcast(order_id, {"type": "status", "status": "CANCELLED", "eta_mins": 0})
     doc = await db.orders.find_one({"_id": order["_id"]})
+    await notify_partner(doc, "order_update")
     return order_out(doc)
 
 
@@ -700,99 +691,9 @@ async def review_order(order_id: str, body: ReviewIn, user: dict = Depends(curre
 
 
 # ------------------------------------------------------------------
-# Live order tracking (WebSocket + simulated progression)
+# Live order tracking (WebSocket). Status is driven by the restaurant partner app;
+# the rider leg (OUT_FOR_DELIVERY -> DELIVERED) is simulated in core.simulate_delivery.
 # ------------------------------------------------------------------
-class ConnectionManager:
-    def __init__(self):
-        self.active: dict[str, set] = {}
-
-    async def connect(self, order_id: str, ws: WebSocket):
-        await ws.accept()
-        self.active.setdefault(order_id, set()).add(ws)
-
-    def disconnect(self, order_id: str, ws: WebSocket):
-        conns = self.active.get(order_id)
-        if conns:
-            conns.discard(ws)
-            if not conns:
-                self.active.pop(order_id, None)
-
-    async def broadcast(self, order_id: str, payload: dict):
-        for ws in list(self.active.get(order_id, [])):
-            try:
-                await ws.send_json(payload)
-            except Exception:
-                self.disconnect(order_id, ws)
-
-
-manager = ConnectionManager()
-sim_tasks: dict[str, asyncio.Task] = {}
-
-ETA_BY_STATUS = {"CONFIRMED": 35, "PREPARING": 25, "OUT_FOR_DELIVERY": 10, "DELIVERED": 0}
-
-
-async def push_status(order_id: str, status: str):
-    await db.orders.update_one(
-        {"_id": ObjectId(order_id)},
-        {"$set": {"status": status},
-         "$push": {"timeline": {"status": status, "at": now_iso()}}})
-    await manager.broadcast(order_id, {
-        "type": "status", "status": status, "eta_mins": ETA_BY_STATUS.get(status, 30)})
-
-
-async def simulate_ride(order_id: str):
-    order = await db.orders.find_one({"_id": ObjectId(order_id)})
-    if not order:
-        return
-    r_lat = order["restaurant"].get("lat") or 12.9716
-    r_lng = order["restaurant"].get("lng") or 77.5946
-    a_lat = order["address"].get("lat") or r_lat + 0.02
-    a_lng = order["address"].get("lng") or r_lng + 0.015
-    steps = 12
-    for i in range(1, steps + 1):
-        await asyncio.sleep(5)
-        frac = i / steps
-        lat = r_lat + (a_lat - r_lat) * frac
-        lng = r_lng + (a_lng - r_lng) * frac
-        await db.orders.update_one({"_id": ObjectId(order_id)},
-                                   {"$set": {"rider.lat": lat, "rider.lng": lng}})
-        await manager.broadcast(order_id, {
-            "type": "location", "rider": {"lat": lat, "lng": lng},
-            "progress": frac, "eta_mins": max(1, round((1 - frac) * 8))})
-
-
-async def simulate_order(order_id: str):
-    try:
-        order = await db.orders.find_one({"_id": ObjectId(order_id)})
-        if not order:
-            return
-        status = order["status"]
-        seq = ["CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY", "DELIVERED"]
-        if status not in seq:
-            return
-        idx = seq.index(status)
-        if idx < 1:
-            await asyncio.sleep(15)
-            await push_status(order_id, "PREPARING")
-        if idx < 2:
-            await asyncio.sleep(25)
-            await push_status(order_id, "OUT_FOR_DELIVERY")
-            await simulate_ride(order_id)
-        await push_status(order_id, "DELIVERED")
-    except asyncio.CancelledError:
-        pass
-    except Exception as e:
-        logger.error("simulation error for %s: %s", order_id, e)
-    finally:
-        sim_tasks.pop(order_id, None)
-
-
-def spawn_simulation(order_id: str):
-    task = sim_tasks.get(order_id)
-    if task is None or task.done():
-        sim_tasks[order_id] = asyncio.create_task(simulate_order(order_id))
-
-
 @app.websocket("/api/ws/orders/{order_id}")
 async def order_ws(websocket: WebSocket, order_id: str):
     await manager.connect(order_id, websocket)
@@ -802,8 +703,8 @@ async def order_ws(websocket: WebSocket, order_id: str):
             await websocket.send_json({
                 "type": "init", "status": doc["status"], "timeline": doc.get("timeline", []),
                 "rider": doc.get("rider"), "eta_mins": ETA_BY_STATUS.get(doc["status"], 30)})
-            if doc["status"] in ("CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY"):
-                spawn_simulation(order_id)
+            if doc["status"] in ("READY", "OUT_FOR_DELIVERY") and doc.get("rider"):
+                spawn_delivery(order_id)
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
@@ -822,8 +723,9 @@ async def startup():
     if count == 0:
         r, m = await seed_database(db)
         logger.info("Seeded %d restaurants and %d menu items", r, m)
-    async for o in db.orders.find({"status": {"$in": ["CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY"]}}):
-        spawn_simulation(str(o["_id"]))
+    await seed_partners()
+    async for o in db.orders.find({"status": {"$in": ["READY", "OUT_FOR_DELIVERY"]}, "rider": {"$ne": None}}):
+        spawn_delivery(str(o["_id"]))
 
 
 @app.on_event("shutdown")
@@ -832,6 +734,7 @@ async def shutdown_db_client():
 
 
 app.include_router(api_router)
+app.include_router(partner_router)
 
 app.add_middleware(
     CORSMiddleware,

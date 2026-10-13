@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@react-native-vector-icons/ionicons";
@@ -7,12 +7,21 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import { fonts, makeStyles, radius, spacing, typeScale } from "@/src/theme";
 import { usesNativeTabs } from "@/src/navigation";
 import { apiFetch } from "@/src/api/client";
-import { EmptyState, inr, showToast } from "@/src/components/ui";
+import { Chip, EmptyState, inr, showToast } from "@/src/components/ui";
 import { RestaurantCard, Restaurant } from "@/src/components/restaurant-card";
 import { MenuItem, MenuItemRow } from "@/src/components/menu-item-row";
 import { useCart } from "@/src/context/cart";
 
 type Mode = "restaurants" | "dishes";
+type Sort = "" | "rating" | "time" | "price_low" | "price_high";
+
+const SORT_OPTIONS: { key: Sort; label: string }[] = [
+  { key: "", label: "Relevance" },
+  { key: "rating", label: "Rating" },
+  { key: "time", label: "Delivery time" },
+  { key: "price_low", label: "Price: low to high" },
+  { key: "price_high", label: "Price: high to low" },
+];
 
 export default function Search() {
   const styles = useStyles();
@@ -27,11 +36,26 @@ export default function Search() {
   const [dishes, setDishes] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [sort, setSort] = useState<Sort>("");
+  const [vegOnly, setVegOnly] = useState(false);
+  const [topRated, setTopRated] = useState(false);
+  const [cuisine, setCuisine] = useState("");
+  const [cuisines, setCuisines] = useState<string[]>([]);
+  const [sortOpen, setSortOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const filtersActive = !!sort || vegOnly || topRated || !!cuisine;
+  const active = !!q.trim() || filtersActive;
+
+  useEffect(() => {
+    apiFetch<{ restaurants: Restaurant[] }>("/api/restaurants")
+      .then((d) => setCuisines(Array.from(new Set(d.restaurants.flatMap((r) => r.cuisines))).sort()))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
-    if (!q.trim()) {
+    if (!active) {
       setRestaurants([]);
       setDishes([]);
       setSearched(false);
@@ -41,11 +65,20 @@ export default function Search() {
     setLoading(true);
     timer.current = setTimeout(async () => {
       try {
-        const data = await apiFetch<{ restaurants: Restaurant[]; dishes: MenuItem[] }>(
-          `/api/search?q=${encodeURIComponent(q.trim())}`,
-        );
-        setRestaurants(data.restaurants);
-        setDishes(data.dishes);
+        const params = new URLSearchParams();
+        if (q.trim()) params.set("q", q.trim());
+        if (sort) params.set("sort", sort);
+        if (vegOnly) params.set("veg_only", "true");
+        if (topRated) params.set("rating_min", "4");
+        if (cuisine) params.set("cuisine", cuisine);
+        const [r, d] = await Promise.all([
+          apiFetch<{ restaurants: Restaurant[] }>(`/api/restaurants?${params.toString()}`),
+          q.trim()
+            ? apiFetch<{ dishes: MenuItem[] }>(`/api/search?q=${encodeURIComponent(q.trim())}`)
+            : Promise.resolve({ dishes: [] as MenuItem[] }),
+        ]);
+        setRestaurants(r.restaurants);
+        setDishes(vegOnly ? d.dishes.filter((x) => x.veg) : d.dishes);
         setSearched(true);
       } catch {
         setRestaurants([]);
@@ -57,7 +90,15 @@ export default function Search() {
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [q]);
+  }, [q, sort, vegOnly, topRated, cuisine, active]);
+
+  const clearFilters = () => {
+    setSort("");
+    setVegOnly(false);
+    setTopRated(false);
+    setCuisine("");
+    setSortOpen(false);
+  };
 
   const addDish = (item: MenuItem) => {
     const result = cart.addItem(
@@ -106,11 +147,57 @@ export default function Search() {
         ))}
       </View>
 
+      {mode === "restaurants" ? (
+        <View testID="search-filters">
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+            <Chip
+              label={sort ? `Sort: ${SORT_OPTIONS.find((o) => o.key === sort)?.label}` : "Sort"}
+              icon="swap-vertical"
+              active={!!sort || sortOpen}
+              onPress={() => setSortOpen((v) => !v)}
+              testID="filter-sort"
+            />
+            <Chip label="Pure Veg" icon="leaf" active={vegOnly} onPress={() => setVegOnly((v) => !v)} testID="filter-veg" />
+            <Chip label="Rating 4.0+" icon="star" active={topRated} onPress={() => setTopRated((v) => !v)} testID="filter-rating" />
+            {cuisines.map((c) => (
+              <Chip
+                key={c}
+                label={c}
+                active={cuisine === c}
+                onPress={() => setCuisine((cur) => (cur === c ? "" : c))}
+                testID={`filter-cuisine-${c.replace(/\s+/g, "-").toLowerCase()}`}
+              />
+            ))}
+            {filtersActive ? (
+              <Chip label="Clear" icon="close" active={false} onPress={clearFilters} testID="filter-clear" />
+            ) : null}
+          </ScrollView>
+          {sortOpen ? (
+            <View style={styles.sortSheet} testID="sort-options">
+              {SORT_OPTIONS.map((o) => (
+                <Pressable
+                  key={o.key || "relevance"}
+                  testID={`sort-option-${o.key || "relevance"}`}
+                  style={styles.sortRow}
+                  onPress={() => {
+                    setSort(o.key);
+                    setSortOpen(false);
+                  }}
+                >
+                  <Text style={[styles.sortLabel, sort === o.key && styles.sortLabelActive]}>{o.label}</Text>
+                  {sort === o.key ? <Ionicons name="checkmark" size={18} color="#D95325" /> : null}
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
       {loading ? (
         <View style={styles.center} testID="search-loading">
           <ActivityIndicator color="#D95325" />
         </View>
-      ) : !q.trim() ? (
+      ) : !active ? (
         <EmptyState
           icon="search-outline"
           title="Search DashBite"
@@ -130,7 +217,7 @@ export default function Search() {
               <EmptyState
                 icon="restaurant-outline"
                 title="No restaurants found"
-                subtitle={`Nothing matches "${q}". Try dishes instead.`}
+                subtitle={q.trim() ? `Nothing matches "${q}". Try dishes instead.` : "No restaurants match these filters."}
                 testID="search-empty-restaurants"
               />
             ) : null
@@ -216,6 +303,27 @@ const useStyles = makeStyles((colors) => ({
   segmentText: { fontFamily: fonts.textMedium, fontSize: typeScale.base, color: colors.muted },
   segmentTextActive: { color: colors.brandPrimary, fontFamily: fonts.displaySemiBold },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  filterRow: { paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.sm },
+  sortSheet: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    overflow: "hidden",
+  },
+  sortRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 44,
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  sortLabel: { fontFamily: fonts.textMedium, fontSize: typeScale.base, color: colors.onSurface },
+  sortLabelActive: { color: colors.brandPrimary, fontFamily: fonts.displaySemiBold },
   list: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   dishRestaurant: {
     fontFamily: fonts.textMedium,

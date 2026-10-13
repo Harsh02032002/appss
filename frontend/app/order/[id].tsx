@@ -13,7 +13,7 @@ import { useReorder } from "@/src/hooks/use-reorder";
 import { ACTIVE_STATUSES, Order, STATUS_LABELS, statusColor } from "../(tabs)/orders";
 
 const CANCEL_WINDOW_SECONDS = 60;
-const CANCELLABLE = ["PAYMENT_PENDING", "CONFIRMED", "PREPARING"];
+const CANCELLABLE = ["PAYMENT_PENDING", "PLACED", "CONFIRMED", "PREPARING"];
 
 function confirmAsync(title: string, message: string): Promise<boolean> {
   if (Platform.OS === "web") return Promise.resolve(window.confirm(`${title}\n\n${message}`));

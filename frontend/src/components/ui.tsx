@@ -132,19 +132,23 @@ export function Chip({
   active,
   onPress,
   testID,
+  icon,
 }: {
   label: string;
   active: boolean;
   onPress: () => void;
   testID: string;
+  icon?: string;
 }) {
   const styles = useChipStyles();
+  const { colors } = useTheme();
   return (
     <Pressable
       testID={testID}
       onPress={onPress}
       style={[styles.chip, active && styles.chipActive]}
     >
+      {icon ? <Ionicons name={icon as any} size={14} color={active ? colors.onBrandPrimary : colors.onSurfaceSecondary} /> : null}
       <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
     </Pressable>
   );
@@ -153,6 +157,8 @@ export function Chip({
 const useChipStyles = makeStyles((colors) => ({
   chip: {
     flexShrink: 0,
+    flexDirection: "row",
+    gap: 6,
     height: 36,
     paddingHorizontal: spacing.lg,
     borderRadius: radius.pill,

@@ -21,6 +21,7 @@ export type Restaurant = {
   address: string;
   lat?: number;
   lng?: number;
+  is_open?: boolean;
 };
 
 export function RestaurantCard({ restaurant }: { restaurant: Restaurant }) {
@@ -35,7 +36,12 @@ export function RestaurantCard({ restaurant }: { restaurant: Restaurant }) {
       onPress={() => router.push(`/restaurant/${restaurant.id}`)}
     >
       <View>
-        <Image source={{ uri: restaurant.image }} style={styles.image} contentFit="cover" transition={200} />
+        <Image source={{ uri: restaurant.image }} style={[styles.image, restaurant.is_open === false && { opacity: 0.55 }]} contentFit="cover" transition={200} />
+        {restaurant.is_open === false ? (
+          <View style={styles.closedOverlay} testID={`closed-badge-${restaurant.id}`}>
+            <Text style={styles.closedText}>Currently closed</Text>
+          </View>
+        ) : null}
         {restaurant.offer ? (
           <View style={styles.offer}>
             <Text style={styles.offerText}>{restaurant.offer}</Text>
@@ -90,6 +96,16 @@ const useStyles = makeStyles((colors) => ({
   },
   offerText: { color: colors.onBrandPrimary, fontFamily: fonts.displaySemiBold, fontSize: typeScale.sm },
   heart: { position: "absolute", top: spacing.md, right: spacing.md },
+  closedOverlay: {
+    position: "absolute",
+    top: spacing.md,
+    left: spacing.md,
+    backgroundColor: colors.surfaceInverse,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  closedText: { color: colors.onSurfaceInverse, fontFamily: fonts.displaySemiBold, fontSize: typeScale.sm },
   body: { padding: spacing.md, gap: spacing.xs },
   titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   name: {

@@ -19,6 +19,7 @@ export type MenuItem = {
   bestseller?: boolean;
   rating?: number;
   restaurant_name?: string;
+  available?: boolean;
 };
 
 export function QtyStepper({
@@ -61,12 +62,14 @@ export function MenuItemRow({
 }) {
   const styles = useStyles();
   const router = useRouter();
+  const unavailable = item.available === false;
 
   return (
     <Pressable
       testID={`menu-item-${item.id}`}
-      style={styles.row}
+      style={[styles.row, unavailable && styles.rowDisabled]}
       onPress={() => router.push(`/item/${item.id}`)}
+      disabled={unavailable}
     >
       <View style={styles.info}>
         <View style={styles.badgeRow}>
@@ -88,7 +91,11 @@ export function MenuItemRow({
       <View style={styles.imageWrap}>
         <Image source={{ uri: item.image }} style={styles.image} contentFit="cover" transition={150} />
         <View style={styles.addWrap}>
-          {qty > 0 ? (
+          {unavailable ? (
+            <View style={[styles.addBtn, styles.addBtnDisabled]} testID={`unavailable-${item.id}`}>
+              <Text style={styles.unavailableText}>Unavailable</Text>
+            </View>
+          ) : qty > 0 ? (
             <QtyStepper qty={qty} onInc={onInc} onDec={onDec} testID={`stepper-${item.id}`} />
           ) : (
             <Pressable testID={`add-${item.id}`} style={styles.addBtn} onPress={onAdd}>
@@ -109,6 +116,7 @@ const useStyles = makeStyles((colors) => ({
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,
   },
+  rowDisabled: { opacity: 0.55 },
   info: { flex: 1, gap: spacing.xs },
   badgeRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   bestseller: {
@@ -139,6 +147,8 @@ const useStyles = makeStyles((colors) => ({
     elevation: 2,
   },
   addText: { color: colors.brandPrimary, fontFamily: fonts.displayBold, fontSize: typeScale.base },
+  addBtnDisabled: { borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  unavailableText: { color: colors.muted, fontFamily: fonts.displaySemiBold, fontSize: typeScale.sm },
   stepper: {
     flexDirection: "row",
     alignItems: "center",

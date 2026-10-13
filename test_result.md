@@ -135,3 +135,29 @@ frontend:
 agent_communication:
   - agent: "main"
     message: "Backend endpoints smoke-tested manually via python requests (all pass). Need full frontend+backend test."
+
+## Iteration: Restaurant Partner App + new order flow + search filters + real map — Jun 2026
+backend:
+  - task: "Partner auth (/api/partner/auth/login, /me), dashboard, orders (accept/reject/status/assign-rider), riders, menu availability, restaurant open/close, partner WS /api/partner/ws?token="
+    implemented: true
+    working: "NA"
+    file: "/app/backend/partner.py, /app/backend/core.py"
+  - task: "New order lifecycle: PLACED -> CONFIRMED -> PREPARING -> READY -> OUT_FOR_DELIVERY (sim after rider assigned + READY) -> DELIVERED; customer cancel window includes PLACED"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py, /app/backend/core.py"
+  - task: "GET /api/restaurants filters: sort=rating|time|price_low|price_high, veg_only, rating_min, cuisine; menu item 'available' + restaurant 'is_open' enforcement on order create"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+frontend (restaurant-app, separate Expo project at /app/restaurant-app):
+  - task: "Login, Orders tab (segments New/In kitchen/Ready & out/Past, live WS), Order details, Assign rider sheet, Reject sheet, Menu availability toggles, Dashboard stats + open/close + logout"
+    implemented: true
+    working: "NA"
+frontend (customer app):
+  - task: "Search tab filters (sort/veg/rating/cuisine chips), Track screen real map (react-native-maps native, illustrated fallback web) + new statuses, unavailable items, closed restaurant badge"
+    implemented: true
+    working: "NA"
+agent_communication:
+  - agent: "main"
+    message: "Backend partner flow smoke tested manually (login→place order→accept→assign→preparing→ready→auto OUT_FOR_DELIVERY). Only ONE Expo app can be served on the public URL at a time (port 3000)."

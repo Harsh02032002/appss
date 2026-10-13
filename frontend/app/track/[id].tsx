@@ -1,26 +1,25 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Dimensions, Linking, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import Ionicons from "@react-native-vector-icons/ionicons";
 
 import { fonts, makeStyles, radius, spacing, typeScale } from "@/src/theme";
 import { apiFetch, wsUrl } from "@/src/api/client";
 import { EmptyState } from "@/src/components/ui";
+import { LiveMap } from "@/src/components/live-map";
 import { Order, STATUS_LABELS } from "../(tabs)/orders";
 
 const STEPS = [
-  { key: "CONFIRMED", label: "Order confirmed", icon: "checkmark-circle" },
+  { key: "PLACED", label: "Order placed", icon: "receipt" },
+  { key: "CONFIRMED", label: "Accepted by restaurant", icon: "checkmark-circle" },
   { key: "PREPARING", label: "Being prepared", icon: "flame" },
+  { key: "READY", label: "Ready for pickup", icon: "bag-check" },
   { key: "OUT_FOR_DELIVERY", label: "Out for delivery", icon: "bicycle" },
   { key: "DELIVERED", label: "Delivered", icon: "home" },
 ] as const;
 
-const { width } = Dimensions.get("window");
-const MAP_WIDTH = width - spacing.lg * 2;
-const RIDER_START = { x: 24, y: 28 };
-const RIDER_END = { x: MAP_WIDTH - 64, y: 130 };
+const FALLBACK_RESTAURANT = { lat: 12.9716, lng: 77.5946 };
 
 export default function TrackOrder() {
   const styles = useStyles();
@@ -33,7 +32,7 @@ export default function TrackOrder() {
   const [eta, setEta] = useState(35);
   const [connected, setConnected] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const progress = useSharedValue(0);
+  const [riderPos, setRiderPos] = useState<{ lat: number; lng: number } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -52,9 +51,16 @@ export default function TrackOrder() {
             setStatus(msg.status);
             if (msg.eta_mins != null) setEta(msg.eta_mins);
           }
+          if (msg.type === "init" && msg.rider) {
+            setOrder((o) => (o ? { ...o, rider: msg.rider } : o));
+            if (msg.rider.lat != null) setRiderPos({ lat: msg.rider.lat, lng: msg.rider.lng });
+          }
+          if (msg.type === "rider") {
+            setOrder((o) => (o ? { ...o, rider: msg.rider } : o));
+          }
           if (msg.type === "location") {
             setEta(msg.eta_mins);
-            progress.value = withTiming(msg.progress, { duration: 4500 });
+            setRiderPos({ lat: msg.rider.lat, lng: msg.rider.lng });
           }
         } catch {}
       };
@@ -70,7 +76,7 @@ export default function TrackOrder() {
         const o = await apiFetch<Order>(`/api/orders/${id}`);
         setOrder(o);
         setStatus(o.status);
-        if (o.status === "DELIVERED") progress.value = 1;
+        if (o.rider?.lat != null && o.rider?.lng != null) setRiderPos({ lat: o.rider.lat, lng: o.rider.lng });
       } catch (e: any) {
         setLoadError(e.message || "Tracking information unavailable.");
       }
@@ -85,15 +91,17 @@ export default function TrackOrder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const riderStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: RIDER_START.x + (RIDER_END.x - RIDER_START.x) * progress.value },
-      { translateY: RIDER_START.y + (RIDER_END.y - RIDER_START.y) * progress.value },
-    ],
-  }));
-
   const stepIndex = STEPS.findIndex((s) => s.key === status);
   const delivered = status === "DELIVERED";
+  const restaurantPos = {
+    lat: order?.restaurant.lat ?? FALLBACK_RESTAURANT.lat,
+    lng: order?.restaurant.lng ?? FALLBACK_RESTAURANT.lng,
+  };
+  const destinationPos = {
+    lat: order?.address.lat ?? restaurantPos.lat + 0.018,
+    lng: order?.address.lng ?? restaurantPos.lng + 0.012,
+  };
+  const riderOnMap = delivered ? destinationPos : riderPos ?? restaurantPos;
 
   if (loadError) {
     return (
@@ -127,31 +135,12 @@ export default function TrackOrder() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Simulated live map */}
-        <View style={styles.mapCard} testID="track-map">
-          <View style={styles.mapGrid}>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <View key={`h-${i}`} style={[styles.gridLineH, { top: 40 * (i + 1) }]} />
-            ))}
-            {Array.from({ length: 7 }).map((_, i) => (
-              <View key={`v-${i}`} style={[styles.gridLineV, { left: (MAP_WIDTH / 7) * (i + 1) }]} />
-            ))}
-          </View>
-          {/* Route line */}
-          <View style={styles.routeLine} />
-          {/* Restaurant pin */}
-          <View style={[styles.pin, { left: RIDER_START.x - 4, top: RIDER_START.y - 10 }]}>
-            <Ionicons name="storefront" size={18} color="#B84018" />
-          </View>
-          {/* Home pin */}
-          <View style={[styles.pin, { left: RIDER_END.x + 4, top: RIDER_END.y + 6 }]}>
-            <Ionicons name="home" size={18} color="#388E3C" />
-          </View>
-          {/* Rider marker */}
-          <Animated.View style={[styles.riderMarker, riderStyle]} testID="rider-marker">
-            <Ionicons name="bicycle" size={16} color="#FFFFFF" />
-          </Animated.View>
-        </View>
+        <LiveMap
+          restaurant={restaurantPos}
+          destination={destinationPos}
+          rider={riderOnMap}
+          showRider={!!order?.rider || delivered}
+        />
 
         {/* ETA banner */}
         <View style={styles.etaCard} testID="track-eta">
@@ -164,6 +153,11 @@ export default function TrackOrder() {
             <>
               <Text style={styles.etaTitle}>Order cancelled</Text>
               <Text style={styles.etaSub}>Any payment made will be refunded.</Text>
+            </>
+          ) : status === "PLACED" ? (
+            <>
+              <Text style={styles.etaTitle}>Waiting for restaurant</Text>
+              <Text style={styles.etaSub}>Your order will be accepted shortly</Text>
             </>
           ) : status === "PAYMENT_PENDING" ? (
             <>
@@ -179,14 +173,14 @@ export default function TrackOrder() {
         </View>
 
         {/* Rider card */}
-        {order && (status === "OUT_FOR_DELIVERY" || status === "PREPARING") ? (
+        {order?.rider && !delivered ? (
           <View style={styles.riderCard} testID="rider-card">
             <View style={styles.riderAvatar}>
               <Ionicons name="person" size={20} color="#FFFFFF" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.riderName}>{order.rider?.name ?? "Delivery partner"}</Text>
-              <Text style={styles.riderSub}>Your delivery partner</Text>
+              <Text style={styles.riderSub}>{order.rider?.vehicle ?? "Your delivery partner"}</Text>
             </View>
             <Pressable
               testID="rider-call-button"
@@ -272,43 +266,6 @@ const useStyles = makeStyles((colors) => ({
   liveDot: { width: 8, height: 8, borderRadius: 4 },
   liveText: { fontFamily: fonts.displayBold, fontSize: 10, color: colors.onSurfaceSecondary, letterSpacing: 1 },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl, gap: spacing.lg },
-  mapCard: {
-    height: 210,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surfaceTertiary,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  mapGrid: { position: "absolute", inset: 0 } as any,
-  gridLineH: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: colors.divider },
-  gridLineV: { position: "absolute", top: 0, bottom: 0, width: 1, backgroundColor: colors.divider },
-  routeLine: {
-    position: "absolute",
-    left: 40,
-    top: 44,
-    width: MAP_WIDTH - 110,
-    height: 0,
-    borderTopWidth: 2,
-    borderStyle: "dashed",
-    borderColor: colors.borderStrong,
-    transform: [{ rotate: "14deg" }],
-  },
-  pin: { position: "absolute" },
-  riderMarker: {
-    position: "absolute",
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.brandPrimary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: colors.brandSecondary,
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 6,
-  },
   etaCard: {
     backgroundColor: colors.surfaceInverse,
     borderRadius: radius.lg,
