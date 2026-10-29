@@ -241,6 +241,63 @@ async def list_riders(partner: dict = Depends(current_partner)):
                         "status": d.get("status", "available"), "online": d.get("online", False)} for d in docs]}
 
 
+# ------------------------------------------------------------------ Rider payouts
+def rider_earning(o: dict) -> int:
+    return o["amounts"].get("delivery_fee", 0) + o["amounts"].get("tip", 0)
+
+
+@router.get("/payouts")
+async def payouts(partner: dict = Depends(current_partner)):
+    """Per-rider settlement summary for deliveries of this restaurant."""
+    riders = await db.riders.find().to_list(50)
+    delivered = await db.orders.find({"restaurant.id": partner["restaurant_id"], "status": "DELIVERED",
+                                      "rider": {"$ne": None}}).to_list(5000)
+    # ascending sort so the most recent payout per rider wins in the dict
+    last_payouts = {p["rider_id"]: p async for p in db.payouts.find({"restaurant_id": partner["restaurant_id"]}).sort("at", 1)}
+    out = []
+    for r in riders:
+        rid = str(r["_id"])
+        mine = [o for o in delivered if o["rider"].get("id") == rid]
+        pending = [o for o in mine if o.get("payout_status", "pending") != "paid"]
+        paid = [o for o in mine if o.get("payout_status") == "paid"]
+        out.append({
+            "id": rid, "name": r["name"], "phone": r["phone"], "vehicle": r["vehicle"],
+            "online": r.get("online", False), "status": r.get("status", "available"),
+            "pending_amount": sum(rider_earning(o) for o in pending), "pending_count": len(pending),
+            "paid_amount": sum(rider_earning(o) for o in paid), "delivered_count": len(mine),
+            "last_payout": ({"amount": last_payouts[rid]["amount"], "at": last_payouts[rid]["at"]}
+                            if rid in last_payouts else None),
+        })
+    out.sort(key=lambda x: x["pending_amount"], reverse=True)
+    return {"riders": out, "total_pending": sum(x["pending_amount"] for x in out)}
+
+
+@router.post("/payouts/{rider_id}/settle")
+async def settle_rider(rider_id: str, partner: dict = Depends(current_partner)):
+    rider = await db.riders.find_one({"_id": oid(rider_id)})
+    if not rider:
+        raise HTTPException(status_code=404, detail="Rider not found")
+    q = {"restaurant.id": partner["restaurant_id"], "status": "DELIVERED", "rider.id": rider_id,
+         "payout_status": {"$ne": "paid"}}
+    pending = await db.orders.find(q).to_list(5000)
+    if not pending:
+        raise HTTPException(status_code=400, detail="Nothing pending for this rider")
+    paid_at = now_iso()
+    # Claim atomically: only orders that are still unpaid get stamped with this payout time
+    await db.orders.update_many({"_id": {"$in": [o["_id"] for o in pending]}, "payout_status": {"$ne": "paid"}},
+                                {"$set": {"payout_status": "paid", "paid_at": paid_at}})
+    claimed = await db.orders.find({"rider.id": rider_id, "paid_at": paid_at}).to_list(5000)
+    if not claimed:
+        raise HTTPException(status_code=400, detail="Nothing pending for this rider")
+    amount = sum(rider_earning(o) for o in claimed)
+    pending = claimed
+    payout = {"rider_id": rider_id, "restaurant_id": partner["restaurant_id"], "amount": amount,
+              "deliveries": len(pending), "at": paid_at, "by": partner["email"]}
+    await db.payouts.insert_one(payout)
+    await rider_manager.broadcast(rider_id, {"type": "payout", "amount": amount, "deliveries": len(pending), "at": paid_at})
+    return {"rider_id": rider_id, "amount": amount, "deliveries": len(pending), "at": paid_at}
+
+
 # ------------------------------------------------------------------ Menu
 @router.get("/menu")
 async def menu(partner: dict = Depends(current_partner)):

@@ -87,6 +87,9 @@ export function RiderProvider({ children }: { children: React.ReactNode }) {
             setRequests((prev) => (prev.some((o) => o.id === msg.order.id) ? prev.map((o) => (o.id === msg.order.id ? { ...o, ...msg.order } : o)) : [...prev, msg.order]));
           } else if (msg.type === "request_taken") {
             setRequests((prev) => prev.filter((o) => o.id !== msg.order_id));
+          } else if (msg.type === "payout") {
+            showToast(`Payout received: ₹${Math.round(msg.amount / 100)} for ${msg.deliveries} deliveries`, "success");
+            refresh();
           } else if (msg.type === "order_update") {
             const o: Order = msg.order;
             if (o.rider?.id === riderId) {

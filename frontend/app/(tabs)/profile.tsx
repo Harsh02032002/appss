@@ -99,15 +99,6 @@ export default function Profile() {
           styles={styles}
         />
         <MenuRow
-          icon="heart-outline"
-          label="Favourites"
-          subtitle="Restaurants you love"
-          onPress={() => router.push("/favorites")}
-          testID="profile-favorites-row"
-          colors={colors}
-          styles={styles}
-        />
-        <MenuRow
           icon="receipt-outline"
           label="My Orders"
           subtitle="Track and reorder"

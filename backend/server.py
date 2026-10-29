@@ -233,6 +233,19 @@ async def home():
     }
 
 
+@api_router.get("/restaurant")
+async def primary_restaurant():
+    """Single-restaurant storefront: the one restaurant, its full menu and latest reviews."""
+    doc = await db.restaurants.find_one(sort=[("created_at", 1)])
+    if not doc:
+        raise HTTPException(status_code=404, detail="Restaurant not configured")
+    items = await db.menu_items.find({"restaurant_id": doc["_id"]}).to_list(300)
+    reviews = await db.reviews.find({"restaurant_id": str(doc["_id"])}).sort("created_at", -1).to_list(10)
+    for r in reviews:
+        r["id"] = str(r.pop("_id"))
+    return {"restaurant": restaurant_out(doc), "menu": [item_out(i) for i in items], "banners": BANNERS, "reviews": reviews}
+
+
 @api_router.get("/restaurants")
 async def list_restaurants(q: str = "", cuisine: str = "", sort: str = "", veg_only: bool = False,
                            rating_min: float = 0):

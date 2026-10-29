@@ -178,3 +178,19 @@ frontend (rider-app):
 agent_communication:
   - agent: "main"
     message: "Rider app currently served on public URL (port 3000). Backend rider flow smoke-tested manually (login→online→accept→location→pickup→deliver→dashboard/history)."
+
+## Iteration: Single-restaurant storefront + rider payouts
+backend:
+  - task: "GET /api/restaurant (single store: restaurant+menu+banners+reviews); DB trimmed to 1 restaurant (Biryani Blues Kitchen, 21 items); seed only seeds the first restaurant"
+    implemented: true
+    working: "NA"
+  - task: "Partner payouts: GET /api/partner/payouts (per-rider pending/settled), POST /api/partner/payouts/{rider_id}/settle (marks all pending DELIVERED orders paid, records payouts collection, WS 'payout' to rider); rider dashboard pending_payout/settled_total; rider history returns payouts list"
+    implemented: true
+    working: "NA"
+frontend:
+  - task: "Customer Home = storefront (store-card, banners, bestsellers, category chips incl. Veg, full menu with add/inc/dec); Search dishes-only; Favourites row removed"
+    implemented: true
+    working: "NA"
+  - task: "Restaurant app: Riders tab (riders-screen) with settle-<riderId> buttons; Rider app Earnings: Pending/Settled boxes, Deliveries/Payouts segments"
+    implemented: true
+    working: "NA"

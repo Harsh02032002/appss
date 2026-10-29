@@ -123,10 +123,25 @@ def build_seed():
         [
             ("Hyderabadi Chicken Biryani", "Slow-cooked basmati layered with spiced chicken, saffron and fried onions. Served with raita.", 329, False, "Biryanis", IMG["biryani"][0], True, 4.5),
             ("Paneer Dum Biryani", "Fragrant basmati with marinated paneer, mint and brown onions.", 279, True, "Biryanis", IMG["biryani"][2], False, 4.3),
-            ("Mughlai Egg Biryani", "Classic dum biryani topped with masala fried eggs.", 229, False, "Biryanis", IMG["biryani"][1], False, 4.1),
+            ("Mughlai Egg Biryani", "Classic dum biryani topped with masala fried eggs.", 229, False, "Biryanis", "https://images.unsplash.com/photo-1642821373181-696a54913e93?q=80&w=800&auto=format&fit=crop", False, 4.1),
             ("Chicken 65", "Fiery deep-fried chicken tossed with curry leaves and red chillies.", 249, False, "Starters", IMG["north"][2], True, 4.4),
             ("Mirchi ka Salan", "Tangy peanut-sesame curry with whole green chillies.", 99, True, "Accompaniments", IMG["north"][0], False, 4.0),
             ("Double ka Meetha", "Hyderabadi bread pudding soaked in saffron milk and nuts.", 129, True, "Desserts", IMG["dessert"][2], False, 4.3),
+            ("Lucknowi Mutton Biryani", "Awadhi-style dum biryani with tender mutton, kewra and whole spices.", 399, False, "Biryanis", "https://images.unsplash.com/photo-1633945274405-b6c8069047b0?q=80&w=800&auto=format&fit=crop", True, 4.6),
+            ("Veg Dum Biryani", "Seasonal vegetables and paneer layered with saffron basmati.", 229, True, "Biryanis", IMG["biryani"][2], False, 4.1),
+            ("Chicken Tikka Biryani", "Smoky tandoori chicken tikka folded into fragrant rice.", 349, False, "Biryanis", "https://images.unsplash.com/photo-1701579231349-d7459c40919d?q=80&w=800&auto=format&fit=crop", False, 4.4),
+            ("Paneer Tikka", "Char-grilled cottage cheese with peppers in tandoori marinade.", 229, True, "Starters", IMG["north"][1], True, 4.3),
+            ("Murgh Malai Kebab", "Creamy cheese-and-cardamom chicken kebabs from the tandoor.", 279, False, "Starters", IMG["north"][2], False, 4.4),
+            ("Crispy Corn", "Golden fried corn tossed with chilli, garlic and spring onion.", 169, True, "Starters", IMG["chinese"][0], False, 4.0),
+            ("Butter Chicken", "Tomato-butter gravy with tandoori chicken, finished with cream.", 319, False, "Curries", IMG["north"][0], True, 4.5),
+            ("Paneer Butter Masala", "Soft paneer in a rich makhani gravy.", 269, True, "Curries", IMG["north"][1], False, 4.3),
+            ("Dal Makhani", "Overnight slow-cooked black lentils with butter and cream.", 219, True, "Curries", "https://images.unsplash.com/photo-1546833999-b9f581a1996d?q=80&w=800&auto=format&fit=crop", False, 4.2),
+            ("Butter Naan", "Tandoor-baked leavened bread brushed with butter.", 59, True, "Breads", "https://images.unsplash.com/photo-1601050690117-94f5f6fa8bd7?q=80&w=800&auto=format&fit=crop", False, 4.2),
+            ("Garlic Naan", "Naan topped with garlic and coriander.", 69, True, "Breads", "https://images.unsplash.com/photo-1619221882220-947b3d3c8861?q=80&w=800&auto=format&fit=crop", False, 4.3),
+            ("Boondi Raita", "Chilled yogurt with crisp boondi and roasted cumin.", 79, True, "Accompaniments", "https://images.unsplash.com/photo-1623653387945-2fd25214f8fc?q=80&w=800&auto=format&fit=crop", False, 4.0),
+            ("Gulab Jamun (2 pcs)", "Soft khoya dumplings in rose-cardamom syrup.", 99, True, "Desserts", "https://images.unsplash.com/photo-1666190092159-3171cf0fbb12?q=80&w=800&auto=format&fit=crop", False, 4.4),
+            ("Masala Chaas", "Spiced buttermilk with mint and roasted cumin.", 69, True, "Beverages", "https://images.unsplash.com/photo-1625220194771-7ebdea0b70b9?q=80&w=800&auto=format&fit=crop", False, 4.1),
+            ("Sweet Lassi", "Thick Punjabi lassi topped with malai.", 89, True, "Beverages", "https://images.unsplash.com/photo-1553909489-cd47e0907980?q=80&w=800&auto=format&fit=crop", False, 4.3),
         ],
     )
 
@@ -226,7 +241,10 @@ def build_seed():
 
 
 async def seed_database(db):
+    # Single-restaurant platform: only the primary restaurant (first in build_seed) is seeded.
     restaurants, menu = build_seed()
+    restaurants = restaurants[:1]
+    menu = [m for m in menu if m["restaurant_id"] == restaurants[0]["_id"]]
     await db.restaurants.insert_many(restaurants)
     await db.menu_items.insert_many(menu)
     await db.menu_items.create_index("restaurant_id")

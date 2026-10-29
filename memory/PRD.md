@@ -26,6 +26,10 @@ Build a complete, modern Zomato-style Customer Food Delivery mobile application 
 Guest browsing, email/password auth, restaurant/menu browsing, cart, COD + Razorpay checkout, address management, live order tracking, profile, help.
 
 ## Implemented
+- **Jun 2026 (Single-restaurant pivot + payouts):**
+  - Platform is now a SINGLE-RESTAURANT brand app (Biryani Blues Kitchen, 21 menu items). DB trimmed to 1 restaurant; `seed_database` seeds only the first restaurant. `GET /api/restaurant` = store + menu + banners + reviews
+  - Customer Home = storefront (hero card, banners, bestsellers, category/veg chips, full menu with add/stepper). Search = dishes only. Favourites row hidden (code kept)
+  - Rider payouts: Restaurant app → **Riders** tab (`GET /api/partner/payouts`, `POST /api/partner/payouts/{rider_id}/settle`, atomic, records `payouts` collection, WS `payout` event). Rider app → Earnings shows Pending vs Settled + Payouts history
 - **Jun 2026 (3-app platform):**
   - **Restaurant Partner app** (`/app/restaurant-app`, separate Expo project, green accent): owner login (`<slug>@partner.dashbite.in`/partner123), live orders via WS (`/api/partner/ws`), accept/reject, Preparing/Ready, assign rider, menu on/off, open/close, dashboard
   - **Rider app** (`/app/rider-app`, separate Expo project): rider login (`ravi@rider.dashbite.in`/rider123), online/offline, request pool + restaurant-assigned, atomic accept, pickup/deliver, decline, real GPS (expo-location) streamed to `POST /api/rider/location` → customer order WS, heartbeat every 12s, Leaflet + OpenStreetMap map in WebView/iframe with OSRM route (no API keys), earnings/history (delivery_fee + tip, payout pending)
@@ -54,7 +58,6 @@ Guest browsing, email/password auth, restaurant/menu browsing, cart, COD + Razor
 - **P1:** Fix Razorpay credentials → verify Pay Online end-to-end
 - **P1:** Real map on Track screen (react-native-maps) once GPS rider tracking exists
 - **P2:** Background location tracking in rider app (needs native build + background permission)
-- **P2:** Payout marking (admin) — currently all rider earnings show 'Payout pending'
 
 ## Next Tasks
 1. User pastes valid Razorpay test keys → wire into .env → test payment flow

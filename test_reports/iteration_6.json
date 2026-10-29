@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 6: single-restaurant storefront + rider payouts. Backend 12/12 pytest pass (after 1 fix by tester): GET /api/restaurant (Biryani Blues Kitchen, 21 items with category/veg/bestseller/available, banners, reviews), /api/restaurants returns exactly 1, search, coupons, full COD lifecycle PLACED->CONFIRMED->PREPARING->READY->OUT_FOR_DELIVERY->DELIVERED with tip 1000 -> Suresh pending +4500 / count +1, rider dashboard pending_payout, settle -> {amount,deliveries,at}, post-settle pending 0 / paid & settled_total increased, rider history payout_status 'paid' + paid_at + payouts[0], re-settle 400 'Nothing pending for this rider', unknown/invalid rider 404, customer/rider/no token 401. BUG FOUND & FIXED: partner payouts last_payout returned the OLDEST payout instead of the latest. Frontend (390x844) all requested flows pass: Home storefront (store-card name+rating, 3 banners, 5 bestsellers, all 8 chips, 21 rows on All, Curries=3 + title 'Curries', Veg=14 matches API), ADD on row -> stepper + view-cart-bar count, stepper plus, bestseller-add adds without navigating, bestseller tap -> /item/<id>; Search: placeholder 'Search our menu', no search-mode-tabs, 'biryani' -> 6 dishes, empty state works; Profile: no favourites row; Login -> storefront cart -> checkout -> select saved address -> COD -> place order -> confirmation -> Track 'Waiting for restaurant'. No deprecated Expo packages detected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/partner/payouts", "issue": "FIXED by tester: last_payout was built via dict comprehension over payouts sorted at DESC, so the last write (the OLDEST payout) won. Reproduced with 2 settlements (showed 10:02:35 instead of 10:03:09). Changed to sort ascending and filter by restaurant_id. partner.py:255"},
+      {"endpoint": "POST /api/partner/payouts/{rider_id}/settle", "issue": "Not atomic: it runs find() and then update_many() by _id without re-checking payout_status, so two concurrent settles could both insert a payout record for the same orders (double payout). Add payout_status != 'paid' to the update_many filter and compute the amount from the matched docs, or use a transaction."},
+      {"endpoint": "GET /api/rider/dashboard", "issue": "pending_payout/settled_total are summed across all restaurants, not per restaurant. OK for a single restaurant, but note it for the future."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Home", "issues": [
+        "bestseller-add-<id> is 28x28 (hitSlop 6 -> ~40). This is under the 44pt minimum touch target. home.tsx:296",
+        "home-profile-button avatar is 40x40, under 44. home.tsx:262",
+        "The bestseller card gives no feedback after its add button is tapped: no qty, stepper or toast. Only the cart bar changes.",
+        "Menu image reuse and irrelevant images: Butter Naan uses the Butter Chicken image, and Dal Makhani/Boondi Raita/Murgh Malai Kebab share the Chicken 65 image. Masala Chaas shows a salad bowl, Sweet Lassi a cake, and Mughlai Egg/Lucknowi Mutton Biryani show pav/buns (seed.py image URLs)."
+      ]},
+      {"screen": "Search", "issues": [
+        "Every dish row still shows the redundant 'Biryani Blues Kitchen' label (single restaurant). search.tsx:219",
+        "On web, the TextInput gets a dark browser focus outline (needs outlineStyle none)."
+      ]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_storefront_payouts.py", "/app/test_reports/pytest/pytest_iter6.xml"],
+  "action_items": [
+    "Make settle atomic: add payout_status filter to update_many and derive the amount from the actually-updated orders (partner.py:279-290)",
+    "search.tsx: remove dead restaurant-mode code (filters, sort, cuisine fetch). It still calls /api/restaurants on mount AND on every debounced keystroke, which is wasted work. Also drop the per-row restaurant name label",
+    "Increase bestseller-add and the home avatar touch targets to >=44pt",
+    "Replace duplicated or irrelevant menu item images in seed data",
+    "Optional: show qty/toast feedback on the bestseller card after adding"
+  ],
+  "critical_code_review_comments": [
+    "partner.py payouts(): last_payout ordering bug (fixed). Note that db.payouts.find() was unscoped and pulled every restaurant's payouts. It is now filtered by restaurant_id",
+    "settle_rider race condition (see backend minor)",
+    "server.py is 759 lines (>700). Consider splitting the orders/payments routes into a module",
+    "search.tsx keeps a 'mode' state that is never set, plus ~100 lines of unreachable restaurant UI"
+  ],
+  "updated_files": ["/app/backend/partner.py (last_payout fix)", "/app/backend/tests/test_storefront_payouts.py (new)"],
+  "success_rate": {"backend": "100% (12/12) after fix; 11/12 before", "frontend": "100% of requested flows"},
+  "seed_data_creation": "Ran 3 full COD deliveries for Suresh (all settled; payouts records created) with address 'TEST_ 1 Payout Lane'. Created 1 UI COD order and then cancelled it (6ae31a94c1ff810fc21bc0e9). End state: all riders offline/available, restaurant open, all items available.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && export $(grep EXPO_PUBLIC_BACKEND_URL /app/frontend/.env) && python -m pytest tests/test_storefront_payouts.py -v (pytest.ini uses xdist loadscope). The test requires Suresh to have no active order. NOTE: 5 pre-existing active orders from earlier iterations are still open with rider None (6acdca6b..PREPARING, 6acdc9fc..PREPARING, 6acdc8ee..PLACED, 6acdc8bc..CONFIRMED, 6acdc804..PREPARING). The tester did not create them and left them as they were.",
+  "rca_of_issue": "last_payout: `{p['rider_id']: p async for p in db.payouts.find().sort('at', -1)}`. In a dict comprehension later items overwrite earlier ones, so with a DESC sort the final value per rider is the oldest payout. Repro: settle the same rider twice and the payouts row shows the first settlement's timestamp. Mitigation applied: sort ascending (latest is written last) and scope to the partner's restaurant."
+}

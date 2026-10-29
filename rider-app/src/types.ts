@@ -17,7 +17,10 @@ export type Order = {
   earning?: number;
   distance_km?: number | null;
   payout_status?: string | null;
+  paid_at?: string | null;
 };
+
+export type Payout = { id: string; amount: number; deliveries: number; at: string };
 
 export type Rider = {
   id: string;
@@ -37,6 +40,8 @@ export type Dashboard = {
   today_earnings: number;
   total_deliveries: number;
   total_earnings: number;
+  pending_payout: number;
+  settled_total: number;
   pending_requests: number;
   active_order: Order | null;
 };

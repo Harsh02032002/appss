@@ -122,6 +122,8 @@ async def dashboard(rider: dict = Depends(current_rider)):
         "today_earnings": sum(earning_for(o) for o in todays),
         "total_deliveries": len(delivered),
         "total_earnings": sum(earning_for(o) for o in delivered),
+        "pending_payout": sum(earning_for(o) for o in delivered if o.get("payout_status", "pending") != "paid"),
+        "settled_total": sum(earning_for(o) for o in delivered if o.get("payout_status") == "paid"),
         "pending_requests": requests_count,
         "active_order": order_out(active) if active else None,
     }
@@ -255,8 +257,12 @@ async def history(rider: dict = Depends(current_rider)):
         d = order_out(o)
         d["earning"] = earning_for(o) if o["status"] == "DELIVERED" else 0
         d["payout_status"] = o.get("payout_status", "pending" if o["status"] == "DELIVERED" else None)
+        d["paid_at"] = o.get("paid_at")
         out.append(d)
-    return {"orders": out}
+    payouts = await db.payouts.find({"rider_id": str(rider["_id"])}).sort("at", -1).to_list(50)
+    for p in payouts:
+        p["id"] = str(p.pop("_id"))
+    return {"orders": out, "payouts": payouts}
 
 
 # ------------------------------------------------------------------ Live feed

@@ -31,7 +31,7 @@ export default function Search() {
   const cart = useCart();
 
   const [q, setQ] = useState("");
-  const [mode, setMode] = useState<Mode>("restaurants");
+  const [mode] = useState<Mode>("dishes");
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [dishes, setDishes] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -40,18 +40,12 @@ export default function Search() {
   const [vegOnly, setVegOnly] = useState(false);
   const [topRated, setTopRated] = useState(false);
   const [cuisine, setCuisine] = useState("");
-  const [cuisines, setCuisines] = useState<string[]>([]);
+  const [cuisines] = useState<string[]>([]);
   const [sortOpen, setSortOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const filtersActive = !!sort || vegOnly || topRated || !!cuisine;
   const active = !!q.trim() || filtersActive;
-
-  useEffect(() => {
-    apiFetch<{ restaurants: Restaurant[] }>("/api/restaurants")
-      .then((d) => setCuisines(Array.from(new Set(d.restaurants.flatMap((r) => r.cuisines))).sort()))
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -71,13 +65,10 @@ export default function Search() {
         if (vegOnly) params.set("veg_only", "true");
         if (topRated) params.set("rating_min", "4");
         if (cuisine) params.set("cuisine", cuisine);
-        const [r, d] = await Promise.all([
-          apiFetch<{ restaurants: Restaurant[] }>(`/api/restaurants?${params.toString()}`),
-          q.trim()
-            ? apiFetch<{ dishes: MenuItem[] }>(`/api/search?q=${encodeURIComponent(q.trim())}`)
-            : Promise.resolve({ dishes: [] as MenuItem[] }),
-        ]);
-        setRestaurants(r.restaurants);
+        const d = q.trim()
+          ? await apiFetch<{ dishes: MenuItem[] }>(`/api/search?q=${encodeURIComponent(q.trim())}`)
+          : { dishes: [] as MenuItem[] };
+        setRestaurants([]);
         setDishes(vegOnly ? d.dishes.filter((x) => x.veg) : d.dishes);
         setSearched(true);
       } catch {
@@ -117,7 +108,7 @@ export default function Search() {
           <TextInput
             testID="search-input"
             style={styles.input}
-            placeholder="Search restaurants or dishes"
+            placeholder="Search our menu"
             placeholderTextColor="#7A746A"
             value={q}
             onChangeText={setQ}
@@ -132,20 +123,7 @@ export default function Search() {
         </View>
       </View>
 
-      <View style={styles.segment} testID="search-mode-tabs">
-        {(["restaurants", "dishes"] as Mode[]).map((m) => (
-          <Pressable
-            key={m}
-            testID={`search-tab-${m}`}
-            style={[styles.segmentBtn, mode === m && styles.segmentBtnActive]}
-            onPress={() => setMode(m)}
-          >
-            <Text style={[styles.segmentText, mode === m && styles.segmentTextActive]}>
-              {m === "restaurants" ? "Restaurants" : "Dishes"}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      {/* Single-restaurant: dishes-only search, mode tabs hidden */}
 
       {mode === "restaurants" ? (
         <View testID="search-filters">
@@ -201,7 +179,7 @@ export default function Search() {
         <EmptyState
           icon="search-outline"
           title="Search DashBite"
-          subtitle="Find restaurants, cuisines and your favourite dishes."
+          subtitle="Find biryanis, kebabs, curries and desserts."
           testID="search-idle"
         />
       ) : mode === "restaurants" ? (
