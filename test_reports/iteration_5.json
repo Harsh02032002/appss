@@ -1,0 +1,48 @@
+{
+  "summary": "Rider app + rider backend tested end-to-end. Backend: 13/13 pytest cases pass (auth, role isolation, all accept guards incl. PLACED/offline/409 race/busy, pickup/deliver guards, 403 for other rider, reject before/after pickup, partner assign-rider -> 'assigned', live GPS over customer WS {type:'location', rider, eta_mins, status}, no auto progression (READY held 22s), customer cancel / partner reject freeing the rider). Frontend (375x667, geolocation granted): login + login-error, home (Hi Ravi, online-card/toggle/status, offline-card, 4 stats), going online, 'GPS locked', location-banner shown only when permission is missing, requests that arrive live over WS when the partner accepts, accept -> active card -> delivery screen (Leaflet/OSM iframe with attribution and 3 .pin markers, pickup disabled 'Waiting for restaurant to mark ready…'), live status PREPARING -> 'Ready for pickup' -> pickup enabled -> Drop-off/'Navigate to customer' -> deliver toast -> Home earnings +₹55, Earnings tab row '+₹55 Payout pending', decline flow (toast, order back in pool), profile + logout. All of these work. I found and fixed one CRITICAL bug: the rider WebSocket kept reconnecting in an endless loop. No 500s in the backend logs. No deprecated Expo packages and no SafeAreaView issues detected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/rider/orders/{id}/accept", "issue": "Returns 409 'This delivery was already taken' for orders that do not exist, or that are DELIVERED or CANCELLED. It should return 404, or 400 'no longer available'."},
+      {"endpoint": "POST /api/rider/orders/{id}/accept", "issue": "Race condition: the 'Finish your current delivery first' check happens separately from the atomic order claim. Two accepts sent at the same time by one rider for different orders could both succeed."},
+      {"endpoint": "POST /api/partner/orders/{id}/assign-rider", "issue": "Does not require the rider to be online. The rider snapshot uses the restaurant's lat/lng instead of the rider's last known lat/lng."},
+      {"endpoint": "GET /api/rider/dashboard", "issue": "Loads up to 5000 DELIVERED orders and filters 'today' in Python. Use a Mongo query or aggregation on delivered_at instead."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "RiderProvider WebSocket (src/context/rider.tsx)", "issue": "FIXED BY T1: the WS effect depended on the whole `rider` object. refresh() calls setRider(), which creates a new object, so the effect re-ran, closed and reopened the socket, and onopen called refresh() again. Result: an endless loop of about 11 WS reconnects and 11 /rider/dashboard calls every 15s, and WS messages could be lost. Changed the dependency to riderId. Re-test: 0 reconnects in 10s.", "testID": "home-screen", "priority": "CRITICAL (fixed)"},
+      {"component": "Delivery screen deliver/reject navigation", "issue": "router.replace('/home') from the stacked /delivery route leaves a second hidden (tabs) instance: 2 home-screen nodes were found in the DOM after delivering. Use router.dismissTo('/home') or router.back() instead.", "testID": "deliver-button", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "GPS streaming", "issue": "Location is only POSTed when watchPositionAsync fires (distanceInterval 10m). A stationary rider sent 0 POSTs in 15s and only 1 in a whole session, so the customer gets no location or ETA updates until the rider moves. When moving, 3 POSTs were sent and the customer order showed the updated rider.lat/lng. Suggest re-sending the last position every 10-15s, and right after accept/pickup.", "affected_testIDs": ["rider-map"]},
+      {"flow": "Live request card", "issue": "Requests that arrive via WS 'request_new' have no distance_km, so 'x km away' is missing until refresh. stat-requests (pending_requests) also does not update live from WS events.", "affected_testIDs": ["request-card-<id>", "stat-requests"]}
+    ],
+    "design_issues": [
+      {"screen": "Delivery", "issues": ["'Decline this delivery' acts on one tap with no confirmation, so it is easy to tap by mistake."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_rider_api.py", "/app/tests/rider_ui_helper.py", "/app/test_reports/pytest/pytest_rider.xml"],
+  "action_items": [
+    "Keep the T1 fix in src/context/rider.tsx (WS effect depends on riderId, not the rider object). Apply the same pattern anywhere else an effect depends on `rider`.",
+    "Add a GPS heartbeat: re-POST the last position every 10-15s while online and immediately after accept/pickup, so the customer gets location and ETA even when the rider is stationary.",
+    "Return 404 or 400 instead of 409 'already taken' when accepting an order that does not exist or is DELIVERED/CANCELLED.",
+    "Use router.dismissTo('/home') or router.back() after deliver/reject instead of router.replace('/home').",
+    "Add distance_km and earning to WS request_new payloads (or compute them client-side). Refresh stat-requests on WS events.",
+    "Optional: add a confirm dialog for decline. assign-rider should use the rider's real location and require the rider to be online."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 746 lines (>700). Split it into modules (orders, payments, auth).",
+    "Stale comments: server.py (~line 697) and core.py's docstring still mention simulate_delivery / 'delivery simulation', but simulation was removed.",
+    "pytest.ini forces -n 2 --dist loadscope. The stateful rider suite must run with -n 0, otherwise one class's module teardown sets the riders offline while the other class is mid-run.",
+    "Creating files under /app/backend triggers a uvicorn --reload and brief 502s. Put helper scripts outside the backend dir."
+  ],
+  "updated_files": ["/app/rider-app/src/context/rider.tsx", "/app/backend/tests/test_rider_api.py", "/app/tests/rider_ui_helper.py"],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "~95% (all requested flows pass; WS reconnect loop fixed; GPS heartbeat missing)"},
+  "seed_data_creation": "Created several TEST_ COD orders for Biryani Blues Kitchen (address line1 TEST_x / TEST_ui). They were delivered by Ravi or cancelled via partner reject during cleanup. Ravi and Suresh are left online=false, status available, with no active order.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run the rider suite serially: cd /app/backend && EXPO_PUBLIC_BACKEND_URL=https://feastwave.preview.emergentagent.com python -m pytest tests/test_rider_api.py -n 0 (about 2 min, including a 22s no-auto-progression wait). Its fixture asserts that Ravi and Suresh have no active order at the start. For UI setup, use /app/tests/rider_ui_helper.py (create [placed] | accept <id> | status <id> PREPARING|READY | state | offline <rider>); it can be called from inside browser_automation via asyncio.create_subprocess_exec. Tab screens stay mounted, so append '>> visible=true' to testID selectors.",
+  "rca_of_issue": "WS reconnect loop: rider.tsx useEffect([rider, refresh]) -> ws.onopen -> refresh() -> setRider({online,status}) -> new rider object reference -> effect cleanup closes the WS -> reconnect -> onopen -> refresh ... Mitigation: depend on rider?.id."
+}

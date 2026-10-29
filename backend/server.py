@@ -15,9 +15,10 @@ import jwt
 import httpx
 
 from core import (client, db, logger, JWT_SECRET, JWT_ALGORITHM, JWT_DAYS, now_iso, oid, order_out,
-                  ETA_BY_STATUS, manager, notify_partner, spawn_delivery, cancel_simulation)
+                  ETA_BY_STATUS, manager, notify_partner, notify_riders)
 from seed import seed_database, CATEGORIES, BANNERS
 from partner import router as partner_router, seed_partners
+from rider import router as rider_router, seed_rider_logins
 
 RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', '')
 RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '')
@@ -658,7 +659,6 @@ async def cancel_order(order_id: str, user: dict = Depends(current_user)):
     age = (datetime.now(timezone.utc) - datetime.fromisoformat(order["created_at"])).total_seconds()
     if age > CANCEL_WINDOW_SECONDS:
         raise HTTPException(status_code=400, detail="Cancellation window (60s) has passed")
-    cancel_simulation(order_id)
     payment_status = "refund_initiated" if order.get("payment_status") == "paid" else "cancelled"
     await db.orders.update_one(
         {"_id": order["_id"]},
@@ -667,6 +667,9 @@ async def cancel_order(order_id: str, user: dict = Depends(current_user)):
     await manager.broadcast(order_id, {"type": "status", "status": "CANCELLED", "eta_mins": 0})
     doc = await db.orders.find_one({"_id": order["_id"]})
     await notify_partner(doc, "order_update")
+    await notify_riders(doc)
+    if order.get("rider"):
+        await db.riders.update_one({"_id": ObjectId(order["rider"]["id"])}, {"$set": {"status": "available"}, "$unset": {"order_id": ""}})
     return order_out(doc)
 
 
@@ -703,8 +706,6 @@ async def order_ws(websocket: WebSocket, order_id: str):
             await websocket.send_json({
                 "type": "init", "status": doc["status"], "timeline": doc.get("timeline", []),
                 "rider": doc.get("rider"), "eta_mins": ETA_BY_STATUS.get(doc["status"], 30)})
-            if doc["status"] in ("READY", "OUT_FOR_DELIVERY") and doc.get("rider"):
-                spawn_delivery(order_id)
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
@@ -724,8 +725,7 @@ async def startup():
         r, m = await seed_database(db)
         logger.info("Seeded %d restaurants and %d menu items", r, m)
     await seed_partners()
-    async for o in db.orders.find({"status": {"$in": ["READY", "OUT_FOR_DELIVERY"]}, "rider": {"$ne": None}}):
-        spawn_delivery(str(o["_id"]))
+    await seed_rider_logins()
 
 
 @app.on_event("shutdown")
@@ -735,6 +735,7 @@ async def shutdown_db_client():
 
 app.include_router(api_router)
 app.include_router(partner_router)
+app.include_router(rider_router)
 
 app.add_middleware(
     CORSMiddleware,

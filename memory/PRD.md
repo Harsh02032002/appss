@@ -26,6 +26,14 @@ Build a complete, modern Zomato-style Customer Food Delivery mobile application 
 Guest browsing, email/password auth, restaurant/menu browsing, cart, COD + Razorpay checkout, address management, live order tracking, profile, help.
 
 ## Implemented
+- **Jun 2026 (3-app platform):**
+  - **Restaurant Partner app** (`/app/restaurant-app`, separate Expo project, green accent): owner login (`<slug>@partner.dashbite.in`/partner123), live orders via WS (`/api/partner/ws`), accept/reject, Preparing/Ready, assign rider, menu on/off, open/close, dashboard
+  - **Rider app** (`/app/rider-app`, separate Expo project): rider login (`ravi@rider.dashbite.in`/rider123), online/offline, request pool + restaurant-assigned, atomic accept, pickup/deliver, decline, real GPS (expo-location) streamed to `POST /api/rider/location` → customer order WS, heartbeat every 12s, Leaflet + OpenStreetMap map in WebView/iframe with OSRM route (no API keys), earnings/history (delivery_fee + tip, payout pending)
+  - **Order lifecycle (no simulation):** PLACED → CONFIRMED (restaurant) → PREPARING → READY → OUT_FOR_DELIVERY (rider pickup) → DELIVERED (rider) | CANCELLED
+  - Customer app: search filters (sort/veg/4.0+/cuisine), real map on Track (react-native-maps native, illustrated web fallback), unavailable items, closed restaurants
+  - Backend split: `core.py` (db/jwt/ws managers), `server.py` (customer), `partner.py`, `rider.py`
+  - Tests: `/app/backend/tests/test_new_features.py`, `test_partner_api.py`, `test_rider_api.py` (run with `-n 0`)
+  - ⚠️ Only ONE Expo app can be served on the preview URL at a time (supervisor serves `/app/frontend`); to preview partner/rider apps, stop `expo` and run `yarn expo start --port 3000` from that folder with `EXPO_PACKAGER_PROXY_URL` set
 - **Jun 2026 (Feature pack 2):**
   - Favourites: heart on restaurant cards + restaurant screen, `/favorites` screen via Profile; `favorites` collection, `GET/POST /api/favorites`
   - Coupons: WELCOME50 / FLAT100 / TASTY20 / FREEDEL; `GET /api/coupons`, `POST /api/coupons/validate`; server-side discount in `POST /api/orders` (`coupon_code`, `amounts.discount`)
@@ -45,7 +53,8 @@ Guest browsing, email/password auth, restaurant/menu browsing, cart, COD + Razor
 ## Backlog (prioritized)
 - **P1:** Fix Razorpay credentials → verify Pay Online end-to-end
 - **P1:** Real map on Track screen (react-native-maps) once GPS rider tracking exists
-- **P2:** Restaurant admin + rider apps (Phase 2)
+- **P2:** Background location tracking in rider app (needs native build + background permission)
+- **P2:** Payout marking (admin) — currently all rider earnings show 'Payout pending'
 
 ## Next Tasks
 1. User pastes valid Razorpay test keys → wire into .env → test payment flow

@@ -161,3 +161,20 @@ frontend (customer app):
 agent_communication:
   - agent: "main"
     message: "Backend partner flow smoke tested manually (login→place order→accept→assign→preparing→ready→auto OUT_FOR_DELIVERY). Only ONE Expo app can be served on the public URL at a time (port 3000)."
+
+## Iteration: Rider App (/app/rider-app) + rider backend — real GPS, no simulation
+backend:
+  - task: "Rider auth/login, PATCH /api/rider/status, GET dashboard/requests/history, POST orders/{id}/accept|reject|pickup|deliver (atomic claim, ownership checks), POST /api/rider/location (broadcasts to customer order WS), WS /api/rider/ws?token="
+    implemented: true
+    working: "NA"
+    file: "/app/backend/rider.py, /app/backend/core.py"
+  - task: "Removed fake delivery simulation; OUT_FOR_DELIVERY/DELIVERED now set only by rider actions"
+    implemented: true
+    working: "NA"
+frontend (rider-app):
+  - task: "Login, Home (online toggle, stats, active delivery, requests), Requests, Earnings/History, Profile, Delivery screen (Leaflet+OSM map via WebView/iframe, OSRM route, navigate, pickup/deliver/decline)"
+    implemented: true
+    working: "NA"
+agent_communication:
+  - agent: "main"
+    message: "Rider app currently served on public URL (port 3000). Backend rider flow smoke-tested manually (login→online→accept→location→pickup→deliver→dashboard/history)."

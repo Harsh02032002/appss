@@ -9,8 +9,8 @@ import re
 import bcrypt
 import jwt
 
-from core import (db, JWT_SECRET, JWT_ALGORITHM, JWT_DAYS, now_iso, oid, order_out, partner_manager,
-                  push_status, spawn_delivery, cancel_simulation, notify_partner, manager)
+from core import (rider_manager, db, JWT_SECRET, JWT_ALGORITHM, JWT_DAYS, now_iso, oid, order_out, partner_manager,
+                  push_status, notify_partner, notify_riders, manager)
 
 router = APIRouter(prefix="/api/partner")
 bearer = HTTPBearer(auto_error=False)
@@ -175,7 +175,6 @@ async def reject_order(order_id: str, body: RejectIn, partner: dict = Depends(cu
     order = await own_order(order_id, partner)
     if order["status"] not in ("PLACED", "CONFIRMED"):
         raise HTTPException(status_code=400, detail="Order can no longer be rejected")
-    cancel_simulation(order_id)
     payment_status = "refund_initiated" if order.get("payment_status") == "paid" else "cancelled"
     await db.orders.update_one(
         {"_id": order["_id"]},
@@ -184,6 +183,9 @@ async def reject_order(order_id: str, body: RejectIn, partner: dict = Depends(cu
     await manager.broadcast(order_id, {"type": "status", "status": "CANCELLED", "eta_mins": 0})
     doc = await own_order(order_id, partner)
     await notify_partner(doc, "order_update")
+    await notify_riders(doc)
+    if order.get("rider"):
+        await db.riders.update_one({"_id": ObjectId(order["rider"]["id"])}, {"$set": {"status": "available"}, "$unset": {"order_id": ""}})
     return order_out(doc)
 
 
@@ -200,8 +202,6 @@ async def update_status(order_id: str, body: StatusIn, partner: dict = Depends(c
     if NEXT_ALLOWED.get(order["status"]) != body.status:
         raise HTTPException(status_code=400, detail=f"Cannot move from {order['status']} to {body.status}")
     await push_status(order_id, body.status)
-    if body.status == "READY" and order.get("rider"):
-        spawn_delivery(order_id)
     return order_out(await own_order(order_id, partner))
 
 
@@ -229,8 +229,8 @@ async def assign_rider(order_id: str, body: AssignIn, partner: dict = Depends(cu
     await manager.broadcast(order_id, {"type": "rider", "rider": rider_snapshot})
     doc = await own_order(order_id, partner)
     await notify_partner(doc, "order_update")
-    if doc["status"] == "READY":
-        spawn_delivery(order_id)
+    await notify_riders(doc)
+    await rider_manager.broadcast("pool", {"type": "request_taken", "order_id": order_id})
     return order_out(doc)
 
 
@@ -238,7 +238,7 @@ async def assign_rider(order_id: str, body: AssignIn, partner: dict = Depends(cu
 async def list_riders(partner: dict = Depends(current_partner)):
     docs = await db.riders.find().to_list(50)
     return {"riders": [{"id": str(d["_id"]), "name": d["name"], "phone": d["phone"], "vehicle": d["vehicle"],
-                        "status": d.get("status", "available")} for d in docs]}
+                        "status": d.get("status", "available"), "online": d.get("online", False)} for d in docs]}
 
 
 # ------------------------------------------------------------------ Menu
