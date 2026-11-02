@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 
-import { apiFetch, TOKEN_KEY } from "@/src/api/client";
+import { apiFetch, onSessionExpired, TOKEN_KEY } from "@/src/api/client";
 import { storage } from "@/src/utils/storage";
 import type { Partner } from "@/src/types";
 
@@ -36,7 +36,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const unsub = onSessionExpired(() => setPartner(null));
     refresh();
+    return unsub;
   }, [refresh]);
 
   const signIn = async (email: string, password: string) => {

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 
-import { apiFetch, TOKEN_KEY } from "@/src/api/client";
+import { apiFetch, onSessionExpired, TOKEN_KEY } from "@/src/api/client";
 import { storage } from "@/src/utils/storage";
 
 export type User = { id: string; name: string; email: string; phone: string };
@@ -20,6 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const unsub = onSessionExpired(() => setUser(null));
     (async () => {
       const token = await storage.secureGet<string | null>(TOKEN_KEY, null);
       if (token) {
@@ -32,6 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setLoading(false);
     })();
+    return unsub;
   }, []);
 
   const persist = async (token: string, u: User) => {

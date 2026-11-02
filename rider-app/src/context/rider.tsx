@@ -52,6 +52,7 @@ export function RiderProvider({ children }: { children: React.ReactNode }) {
       setDashboard(d);
       setRequests(r.requests);
       setAssigned(r.assigned);
+      setConnected(true);
       setRider({ online: d.rider.online, status: d.rider.status });
     } catch {
       // keep stale data
@@ -65,7 +66,7 @@ export function RiderProvider({ children }: { children: React.ReactNode }) {
     refresh();
   }, [refresh]);
 
-  // ---- Live feed (WebSocket) ----
+  // ---- Live feed (WebSocket + 5s REST polling fallback for serverless) ----
   const riderId = rider?.id;
   useEffect(() => {
     if (!riderId) return;
@@ -74,46 +75,51 @@ export function RiderProvider({ children }: { children: React.ReactNode }) {
     let ws: WebSocket | null = null;
     const connect = async () => {
       if (closed) return;
-      const token = await getToken();
-      ws = new WebSocket(wsUrl(`/api/rider/ws?token=${encodeURIComponent(token ?? "")}`));
-      ws.onopen = () => {
-        setConnected(true);
-        refresh();
-      };
-      ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          if (msg.type === "request_new") {
-            setRequests((prev) => (prev.some((o) => o.id === msg.order.id) ? prev.map((o) => (o.id === msg.order.id ? { ...o, ...msg.order } : o)) : [...prev, msg.order]));
-          } else if (msg.type === "request_taken") {
-            setRequests((prev) => prev.filter((o) => o.id !== msg.order_id));
-          } else if (msg.type === "payout") {
-            showToast(`Payout received: ₹${Math.round(msg.amount / 100)} for ${msg.deliveries} deliveries`, "success");
-            refresh();
-          } else if (msg.type === "order_update") {
-            const o: Order = msg.order;
-            if (o.rider?.id === riderId) {
-              if (["DELIVERED", "CANCELLED"].includes(o.status)) {
-                if (o.status === "CANCELLED") showToast("Order was cancelled", "info");
-                refresh();
-              } else {
-                setDashboard((d) => (d ? { ...d, active_order: o } : d));
-                setAssigned((prev) => (prev.some((x) => x.id === o.id) ? prev.map((x) => (x.id === o.id ? o : x)) : [...prev, o]));
-                if (o.status === "READY") showToast(`${o.restaurant.name}: order is ready for pickup`, "success");
+      try {
+        const token = await getToken();
+        ws = new WebSocket(wsUrl(`/api/rider/ws?token=${encodeURIComponent(token ?? "")}`));
+        ws.onopen = () => {
+          setConnected(true);
+          refresh();
+        };
+        ws.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data);
+            if (msg.type === "request_new") {
+              setRequests((prev) => (prev.some((o) => o.id === msg.order.id) ? prev.map((o) => (o.id === msg.order.id ? { ...o, ...msg.order } : o)) : [...prev, msg.order]));
+            } else if (msg.type === "request_taken") {
+              setRequests((prev) => prev.filter((o) => o.id !== msg.order_id));
+            } else if (msg.type === "payout") {
+              showToast(`Payout received: ₹${Math.round(msg.amount / 100)} for ${msg.deliveries} deliveries`, "success");
+              refresh();
+            } else if (msg.type === "order_update") {
+              const o: Order = msg.order;
+              if (o.rider?.id === riderId) {
+                if (["DELIVERED", "CANCELLED"].includes(o.status)) {
+                  if (o.status === "CANCELLED") showToast("Order was cancelled", "info");
+                  refresh();
+                } else {
+                  setDashboard((d) => (d ? { ...d, active_order: o } : d));
+                  setAssigned((prev) => (prev.some((x) => x.id === o.id) ? prev.map((x) => (x.id === o.id ? o : x)) : [...prev, o]));
+                  if (o.status === "READY") showToast(`${o.restaurant.name}: order is ready for pickup`, "success");
+                }
               }
             }
-          }
-        } catch {}
-      };
-      ws.onclose = () => {
-        setConnected(false);
-        if (!closed) retry = setTimeout(connect, 4000);
-      };
-      ws.onerror = () => ws?.close();
+          } catch {}
+        };
+        ws.onclose = () => {
+          if (!closed) retry = setTimeout(connect, 8000);
+        };
+        ws.onerror = () => ws?.close();
+      } catch {}
     };
     connect();
+    const poll = setInterval(() => {
+      refresh();
+    }, 5000);
     return () => {
       closed = true;
+      clearInterval(poll);
       if (retry) clearTimeout(retry);
       ws?.close();
     };

@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": ["frontend", "feastwave"],
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
@@ -15,12 +15,22 @@
       }
     },
     "android": {
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
       "package": "com.emergent.feastwave.xdh9pb",
-      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
+      "permissions": [
+        "INTERNET",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDummyKeyForManifestValidation000000"
+        }
+      }
     },
     "web": {
       "bundler": "metro",

@@ -39,52 +39,63 @@ export default function TrackOrder() {
   useEffect(() => {
     let closed = false;
 
-    const connect = () => {
-      if (closed) return;
-      const ws = new WebSocket(wsUrl(`/api/ws/orders/${id}`));
-      wsRef.current = ws;
-      ws.onopen = () => setConnected(true);
-      ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          if (msg.type === "init" || msg.type === "status") {
-            setStatus(msg.status);
-            if (msg.eta_mins != null) setEta(msg.eta_mins);
-          }
-          if (msg.type === "init" && msg.rider) {
-            setOrder((o) => (o ? { ...o, rider: msg.rider } : o));
-            if (msg.rider.lat != null) setRiderPos({ lat: msg.rider.lat, lng: msg.rider.lng });
-          }
-          if (msg.type === "rider") {
-            setOrder((o) => (o ? { ...o, rider: msg.rider } : o));
-          }
-          if (msg.type === "location") {
-            setEta(msg.eta_mins);
-            setRiderPos({ lat: msg.rider.lat, lng: msg.rider.lng });
-          }
-        } catch {}
-      };
-      ws.onclose = () => {
-        setConnected(false);
-        if (!closed) retryRef.current = setTimeout(connect, 4000);
-      };
-      ws.onerror = () => ws.close();
-    };
-
-    (async () => {
+    const fetchOrderState = async (initial = false) => {
       try {
         const o = await apiFetch<Order>(`/api/orders/${id}`);
+        if (closed) return;
         setOrder(o);
         setStatus(o.status);
-        if (o.rider?.lat != null && o.rider?.lng != null) setRiderPos({ lat: o.rider.lat, lng: o.rider.lng });
+        setConnected(true);
+        if (o.rider?.lat != null && o.rider?.lng != null) {
+          setRiderPos({ lat: o.rider.lat, lng: o.rider.lng });
+        }
       } catch (e: any) {
-        setLoadError(e.message || "Tracking information unavailable.");
+        if (initial && !closed) {
+          setLoadError(e.message || "Tracking information unavailable.");
+        }
       }
-    })();
+    };
+
+    const connect = () => {
+      if (closed) return;
+      try {
+        const ws = new WebSocket(wsUrl(`/api/ws/orders/${id}`));
+        wsRef.current = ws;
+        ws.onopen = () => setConnected(true);
+        ws.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data);
+            if (msg.type === "init" || msg.type === "status") {
+              setStatus(msg.status);
+              if (msg.eta_mins != null) setEta(msg.eta_mins);
+            }
+            if (msg.type === "init" && msg.rider) {
+              setOrder((o) => (o ? { ...o, rider: msg.rider } : o));
+              if (msg.rider.lat != null) setRiderPos({ lat: msg.rider.lat, lng: msg.rider.lng });
+            }
+            if (msg.type === "rider") {
+              setOrder((o) => (o ? { ...o, rider: msg.rider } : o));
+            }
+            if (msg.type === "location") {
+              setEta(msg.eta_mins);
+              setRiderPos({ lat: msg.rider.lat, lng: msg.rider.lng });
+            }
+          } catch {}
+        };
+        ws.onclose = () => {
+          if (!closed) retryRef.current = setTimeout(connect, 8000);
+        };
+        ws.onerror = () => ws.close();
+      } catch {}
+    };
+
+    fetchOrderState(true);
     connect();
+    const pollInterval = setInterval(() => fetchOrderState(false), 5000);
 
     return () => {
       closed = true;
+      clearInterval(pollInterval);
       if (retryRef.current) clearTimeout(retryRef.current);
       wsRef.current?.close();
     };

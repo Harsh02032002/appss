@@ -6,17 +6,53 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from datetime import datetime, timezone
 from pathlib import Path
+import asyncio
 import os
 import logging
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+mongo_url = os.environ.get('MONGO_URL', '').strip().strip('"')
+db_name = os.environ.get('DB_NAME', 'food').strip().strip('"')
 
-JWT_SECRET = os.environ['JWT_SECRET']
+_clients: dict[int, AsyncIOMotorClient] = {}
+
+
+def get_client() -> AsyncIOMotorClient:
+    try:
+        loop_id = id(asyncio.get_running_loop())
+    except RuntimeError:
+        loop_id = 0
+    c = _clients.get(loop_id)
+    if c is None:
+        c = AsyncIOMotorClient(mongo_url)
+        _clients[loop_id] = c
+    return c
+
+
+class _LoopAwareClient:
+    def close(self):
+        for c in list(_clients.values()):
+            try:
+                c.close()
+            except Exception:
+                pass
+        _clients.clear()
+
+
+class _LoopAwareDB:
+    def __getattr__(self, name: str):
+        return getattr(get_client()[db_name], name)
+
+    def __getitem__(self, name: str):
+        return get_client()[db_name][name]
+
+
+client = _LoopAwareClient()
+db = _LoopAwareDB()
+
+JWT_SECRET = os.environ.get('JWT_SECRET', 'dashbite-production-jwt-secret').strip().strip('"')
 JWT_ALGORITHM = "HS256"
 JWT_DAYS = 7
 

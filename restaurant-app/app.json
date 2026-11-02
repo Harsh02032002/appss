@@ -12,11 +12,16 @@
       "bundleIdentifier": "com.emergent.feastwave.partner"
     },
     "android": {
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.emergent.feastwave.partner"
+      "package": "com.emergent.feastwave.partner",
+      "permissions": [
+        "INTERNET",
+        "VIBRATE"
+      ]
     },
     "web": {
       "bundler": "metro",

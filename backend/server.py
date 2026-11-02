@@ -20,8 +20,8 @@ from seed import seed_database, CATEGORIES, BANNERS
 from partner import router as partner_router, seed_partners
 from rider import router as rider_router, seed_rider_logins
 
-RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', '')
-RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '')
+RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', '').strip().strip('"')
+RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '').strip().strip('"')
 RAZORPAY_URL = "https://api.razorpay.com/v1"
 
 app = FastAPI()
@@ -218,9 +218,15 @@ def item_out(doc: dict) -> dict:
     return d
 
 
+@app.get("/")
+async def app_root():
+    return {"status": "ok", "service": "DashBite Shared Live Backend", "api": "/api"}
+
+
+@api_router.get("")
 @api_router.get("/")
 async def root():
-    return {"message": "DashBite API"}
+    return {"message": "DashBite API", "status": "ok"}
 
 
 @api_router.get("/home")
@@ -743,7 +749,8 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    client.close()
+    if not os.environ.get("VERCEL"):
+        client.close()
 
 
 app.include_router(api_router)

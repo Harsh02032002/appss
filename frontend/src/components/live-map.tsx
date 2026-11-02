@@ -1,7 +1,6 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { StyleSheet, View } from "react-native";
-import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
-import Ionicons from "@react-native-vector-icons/ionicons";
+import { WebView } from "react-native-webview";
 
 import { radius, useTheme } from "@/src/theme";
 
@@ -14,84 +13,65 @@ type Props = {
   showRider: boolean;
 };
 
-/** Native live map (Apple Maps on iOS, Google Maps on Android). Web uses live-map.web.tsx. */
+/** Native live map using Leaflet + OpenStreetMap in a WebView (no Google Maps API key required). */
 export function LiveMap({ restaurant, destination, rider, showRider }: Props) {
   const { colors } = useTheme();
-  const mapRef = useRef<MapView>(null);
+  const webRef = useRef<WebView>(null);
+
+  const html = useMemo(() => buildHtml(colors.brandPrimary), [colors.brandPrimary]);
+  const payload = JSON.stringify({
+    restaurant,
+    destination,
+    rider: showRider ? rider : null,
+  });
 
   useEffect(() => {
-    const coords = [
-      { latitude: restaurant.lat, longitude: restaurant.lng },
-      { latitude: destination.lat, longitude: destination.lng },
-    ];
-    mapRef.current?.fitToCoordinates(coords, {
-      edgePadding: { top: 60, right: 60, bottom: 60, left: 60 },
-      animated: false,
-    });
-  }, [restaurant.lat, restaurant.lng, destination.lat, destination.lng]);
+    webRef.current?.injectJavaScript(`window.__update && window.__update(${payload}); true;`);
+  }, [payload]);
 
   return (
     <View style={[styles.wrap, { borderColor: colors.border }]} testID="track-map">
-      <MapView
-        ref={mapRef}
-        provider={PROVIDER_DEFAULT}
+      <WebView
+        ref={webRef}
+        originWhitelist={["*"]}
+        source={{ html }}
+        javaScriptEnabled
+        domStorageEnabled
+        onLoadEnd={() => webRef.current?.injectJavaScript(`window.__update && window.__update(${payload}); true;`)}
         style={StyleSheet.absoluteFill}
-        initialRegion={{
-          latitude: (restaurant.lat + destination.lat) / 2,
-          longitude: (restaurant.lng + destination.lng) / 2,
-          latitudeDelta: Math.abs(restaurant.lat - destination.lat) * 2 + 0.01,
-          longitudeDelta: Math.abs(restaurant.lng - destination.lng) * 2 + 0.01,
-        }}
-        pitchEnabled={false}
-        rotateEnabled={false}
-      >
-        <Polyline
-          coordinates={[
-            { latitude: restaurant.lat, longitude: restaurant.lng },
-            { latitude: destination.lat, longitude: destination.lng },
-          ]}
-          strokeColor={colors.brandPrimary}
-          strokeWidth={3}
-          lineDashPattern={[8, 6]}
-        />
-        <Marker coordinate={{ latitude: restaurant.lat, longitude: restaurant.lng }} title="Restaurant" anchor={{ x: 0.5, y: 0.5 }}>
-          <View style={[styles.pin, { backgroundColor: colors.surface, borderColor: colors.brandSecondary }]}>
-            <Ionicons name="storefront" size={16} color={colors.brandSecondary} />
-          </View>
-        </Marker>
-        <Marker coordinate={{ latitude: destination.lat, longitude: destination.lng }} title="Delivery address" anchor={{ x: 0.5, y: 0.5 }}>
-          <View style={[styles.pin, { backgroundColor: colors.surface, borderColor: colors.success }]}>
-            <Ionicons name="home" size={16} color={colors.success} />
-          </View>
-        </Marker>
-        {showRider && rider ? (
-          <Marker coordinate={{ latitude: rider.lat, longitude: rider.lng }} title="Your rider" anchor={{ x: 0.5, y: 0.5 }}>
-            <View style={[styles.riderPin, { backgroundColor: colors.brandPrimary, borderColor: colors.surface }]} testID="rider-marker">
-              <Ionicons name="bicycle" size={16} color={colors.onBrandPrimary} />
-            </View>
-          </Marker>
-        ) : null}
-      </MapView>
+      />
     </View>
   );
 }
 
+function buildHtml(accent: string) {
+  return `<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>html,body,#map{margin:0;height:100%;width:100%;background:#FDFBF7}
+.pin{width:30px;height:30px;border-radius:15px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.25);font-size:15px}
+.leaflet-control-attribution{font-size:9px}</style></head>
+<body><div id="map"></div>
+<script>
+var map=L.map('map',{zoomControl:false,attributionControl:true}).setView([12.9716,77.5946],13);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(map);
+function icon(bg,emoji){return L.divIcon({className:'',html:'<div class="pin" style="background:'+bg+'">'+emoji+'</div>',iconSize:[30,30],iconAnchor:[15,15]});}
+var restM=null,destM=null,riderM=null,route=null,fitted=false;
+function setMarker(m,p,ic){if(!p){if(m){map.removeLayer(m);}return null;}if(m){m.setLatLng([p.lat,p.lng]);return m;}return L.marker([p.lat,p.lng],{icon:ic}).addTo(map);}
+window.__update=function(d){
+  restM=setMarker(restM,d.restaurant,icon('#145A43','🍽'));
+  destM=setMarker(destM,d.destination,icon('#2E7D32','🏠'));
+  riderM=setMarker(riderM,d.rider,icon('${accent}','🛵'));
+  if(d.restaurant&&d.destination){
+    if(route){map.removeLayer(route);}
+    route=L.polyline([[d.restaurant.lat,d.restaurant.lng],[d.destination.lat,d.destination.lng]],{color:'${accent}',weight:4,dashArray:'8 6'}).addTo(map);
+    if(!fitted){map.fitBounds(L.latLngBounds([[d.restaurant.lat,d.restaurant.lng],[d.destination.lat,d.destination.lng]]).pad(0.25));fitted=true;}
+  }
+};
+</script></body></html>`;
+}
+
 const styles = StyleSheet.create({
   wrap: { height: 220, borderRadius: radius.lg, overflow: "hidden", borderWidth: 1 },
-  pin: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  riderPin: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
 });

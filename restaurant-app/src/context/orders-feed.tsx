@@ -18,7 +18,7 @@ type FeedContextType = {
 
 const FeedContext = createContext<FeedContextType>(null!);
 
-/** Keeps every order for the restaurant (active + past) in memory, kept fresh by the partner WebSocket. */
+/** Keeps every order for the restaurant (active + past) in memory, kept fresh by the partner WebSocket + REST polling. */
 export function OrdersFeedProvider({ children }: { children: React.ReactNode }) {
   const { partner } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -42,6 +42,7 @@ export function OrdersFeedProvider({ children }: { children: React.ReactNode }) 
     try {
       const data = await apiFetch<{ orders: Order[] }>("/api/partner/orders?scope=all");
       setOrders(data.orders);
+      setConnected(true);
     } catch {
       // keep stale
     } finally {
@@ -62,7 +63,7 @@ export function OrdersFeedProvider({ children }: { children: React.ReactNode }) 
     refreshRiders();
   }, [refresh, refreshRiders]);
 
-  // WebSocket live feed with reconnect
+  // WebSocket live feed with reconnect + 5s REST polling fallback for serverless
   useEffect(() => {
     if (!partner) return;
     let closed = false;
@@ -70,35 +71,41 @@ export function OrdersFeedProvider({ children }: { children: React.ReactNode }) 
 
     const connect = async () => {
       if (closed) return;
-      const token = await getToken();
-      const ws = new WebSocket(wsUrl(`/api/partner/ws?token=${encodeURIComponent(token ?? "")}`));
-      wsRef.current = ws;
-      ws.onopen = () => setConnected(true);
-      ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          if (msg.type === "order_new") {
-            upsert(msg.order);
-            showToast(`New order from ${msg.order.customer?.name ?? "a customer"} · ₹${Math.round(msg.order.amounts.total / 100)}`, "success");
-          } else if (msg.type === "order_update") {
-            upsert(msg.order);
-            if (msg.order.status === "DELIVERED") refreshRiders();
-          }
-        } catch {}
-      };
-      ws.onclose = () => {
-        setConnected(false);
-        if (!closed) retry = setTimeout(connect, 4000);
-      };
-      ws.onerror = () => ws.close();
+      try {
+        const token = await getToken();
+        const ws = new WebSocket(wsUrl(`/api/partner/ws?token=${encodeURIComponent(token ?? "")}`));
+        wsRef.current = ws;
+        ws.onopen = () => setConnected(true);
+        ws.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data);
+            if (msg.type === "order_new") {
+              upsert(msg.order);
+              showToast(`New order from ${msg.order.customer?.name ?? "a customer"} · ₹${Math.round(msg.order.amounts.total / 100)}`, "success");
+            } else if (msg.type === "order_update") {
+              upsert(msg.order);
+              if (msg.order.status === "DELIVERED") refreshRiders();
+            }
+          } catch {}
+        };
+        ws.onclose = () => {
+          if (!closed) retry = setTimeout(connect, 8000);
+        };
+        ws.onerror = () => ws.close();
+      } catch {}
     };
     connect();
+    const poll = setInterval(() => {
+      refresh();
+      refreshRiders();
+    }, 5000);
     return () => {
       closed = true;
+      clearInterval(poll);
       if (retry) clearTimeout(retry);
       wsRef.current?.close();
     };
-  }, [partner, upsert, refreshRiders]);
+  }, [partner, upsert, refresh, refreshRiders]);
 
   const act: FeedContextType["act"] = async (order, action, payload) => {
     const path =

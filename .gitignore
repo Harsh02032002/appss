@@ -31,7 +31,7 @@ dist/
 dist
 
 # Environment files (comprehensive coverage)
-
+backend/.env
 *token.json*
 *credentials.json*
 
@@ -60,6 +60,7 @@ chainlit.md
 
 # Deployment
 .vercel
+backend/.vercel
 
 # Data and databases
 agenthub/agents/youtube/db
